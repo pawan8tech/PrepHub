@@ -1,0 +1,11 @@
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+import swPrecache from './vite-plugin-sw.js';
+
+export default defineConfig({
+  plugins: [react(), tailwindcss(), swPrecache()],
+  build: {
+    manifest: true,
+  },
+});

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PrepHub — Offline</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f8fafc;
+        color: #334155;
+        padding: 1.5rem;
+      }
+      .card {
+        text-align: center;
+        max-width: 380px;
+      }
+      .icon {
+        width: 56px;
+        height: 56px;
+        margin: 0 auto 1.5rem;
+        background: #e0e7ff;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+      }
+      h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #0f172a;
+        margin-bottom: 0.5rem;
+      }
+      p {
+        font-size: 0.875rem;
+        line-height: 1.5;
+        color: #64748b;
+        margin-bottom: 1.5rem;
+      }
+      button {
+        background: #2563eb;
+        color: #fff;
+        border: none;
+        padding: 0.625rem 1.25rem;
+        border-radius: 0.5rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      button:hover { background: #1d4ed8; }
+      @media (prefers-color-scheme: dark) {
+        body { background: #0f172a; color: #94a3b8; }
+        .icon { background: #1e293b; }
+        h1 { color: #f1f5f9; }
+        p { color: #94a3b8; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="icon">📡</div>
+      <h1>You're offline</h1>
+      <p>It looks like you've lost your internet connection. Previously visited pages may still be available.</p>
+      <button onclick="location.reload()">Try again</button>
+    </div>
+  </body>
+</html>
