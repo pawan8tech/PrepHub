@@ -7,7 +7,6 @@ import { useMergedContent } from '../hooks/useMergedContent';
 import { useNotes } from '../context/NotesContext';
 import { useMode } from '../context/ModeContext';
 import { useAuth } from '../context/AuthContext';
-import { newEditorBlockId } from '../utils/documentContent';
 import ModeToggle from '../components/common/ModeToggle';
 import BookmarkButton from '../components/common/BookmarkButton';
 import ProgressBadge from '../components/common/ProgressBadge';
@@ -16,7 +15,6 @@ import TopicMeta from '../components/topic/TopicMeta';
 import RelatedTopics from '../components/topic/RelatedTopics';
 import ExternalLinks from '../components/topic/ExternalLinks';
 import EmptyState from '../components/common/EmptyState';
-import ExtractNotes from '../components/ai/ExtractNotes';
 import AdminJsonImport from '../components/admin/AdminJsonImport';
 import SyncStatus from '../components/common/SyncStatus';
 
@@ -32,11 +30,9 @@ export default function TopicDetail() {
   const navigate = useNavigate();
   const mergedContent = useMergedContent(topic);
   const { mode } = useMode();
-  const [showExtract, setShowExtract] = useState(false);
   const [showJsonImport, setShowJsonImport] = useState(false);
   const [notesEditing, setNotesEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const extractPanelRef = useRef(null);
   const topicDocRef = useRef(null);
 
   const handleDeleteTopic = useCallback(async () => {
@@ -58,20 +54,6 @@ export default function TopicDetail() {
   useEffect(() => {
     if (topic) addRecent(topic.slug);
   }, [topic, addRecent]);
-
-  const handleAIInsert = useCallback(
-    async (aiData) => {
-      if (!topic) return;
-      const incoming = Array.isArray(aiData?.blocks) ? aiData.blocks : [];
-      if (incoming.length === 0) return;
-      const current = Array.isArray(mergedContent?.[mode]?.blocks)
-        ? mergedContent[mode].blocks
-        : [];
-      const next = [...current, ...incoming.map((b) => ({ ...b, id: newEditorBlockId() }))];
-      await updateModeDocument(topic.slug, mode, { blocks: next });
-    },
-    [topic, mode, mergedContent, updateModeDocument],
-  );
 
   const handleJsonImport = useCallback(
     async (byMode) => {
@@ -191,14 +173,6 @@ export default function TopicDetail() {
                 Edit notes
               </button>
               )}
-              <button
-                type="button"
-                onClick={() => setShowExtract(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-primary-300 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-100 dark:border-primary-700 dark:bg-primary-900/20 dark:text-primary-400 dark:hover:bg-primary-900/30"
-              >
-                <SparkleIcon />
-                Extract Notes
-              </button>
               {(
                 <button
                   type="button"
@@ -244,14 +218,6 @@ export default function TopicDetail() {
         onNotesEditingChange={setNotesEditing}
       />
 
-      {user && showExtract ? (
-        <ExtractNotes
-          onInsert={handleAIInsert}
-          onClose={() => setShowExtract(false)}
-          panelRef={extractPanelRef}
-        />
-      ) : null}
-
       {isAdmin && showJsonImport ? (
         <AdminJsonImport
           currentMode={mode}
@@ -266,14 +232,6 @@ export default function TopicDetail() {
       {/* Related topics */}
       <RelatedTopics slugs={topic.relatedTopics || []} />
     </div>
-  );
-}
-
-function SparkleIcon() {
-  return (
-    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-    </svg>
   );
 }
 

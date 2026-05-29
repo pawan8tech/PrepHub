@@ -5,14 +5,12 @@ import { useAuth } from '../../context/AuthContext';
 import { useMergedContent } from '../../hooks/useMergedContent';
 import { useNotes } from '../../context/NotesContext';
 import { useMode } from '../../context/ModeContext';
-import { newEditorBlockId } from '../../utils/documentContent';
 import ModeToggle from '../common/ModeToggle';
 import BookmarkButton from '../common/BookmarkButton';
 import ProgressBadge from '../common/ProgressBadge';
 import SyncStatus from '../common/SyncStatus';
 import TopicContent from './TopicContent';
 import ExternalLinks from './ExternalLinks';
-import ExtractNotes from '../ai/ExtractNotes';
 import AdminJsonImport from '../admin/AdminJsonImport';
 
 export default function TopicBlock({ topic }) {
@@ -21,11 +19,9 @@ export default function TopicBlock({ topic }) {
   const mergedContent = useMergedContent(topic);
   const { updateModeDocument, ensurePersonalNoteCopy, getNoteSource, deleteTopic } = useNotes();
   const { mode } = useMode();
-  const [showExtract, setShowExtract] = useState(false);
   const [showJsonImport, setShowJsonImport] = useState(false);
   const [notesEditing, setNotesEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const extractPanelRef = useRef(null);
   const topicDocRef = useRef(null);
 
   const handleDeleteTopic = useCallback(async () => {
@@ -42,24 +38,6 @@ export default function TopicBlock({ topic }) {
       setDeleting(false);
     }
   }, [topic, deleting, isAdmin, deleteTopic]);
-
-  const handleAIInsert = useCallback(
-    async (aiData) => {
-      if (!topic) return;
-      const incoming = Array.isArray(aiData?.blocks) ? aiData.blocks : [];
-      if (incoming.length === 0) return;
-      const current = Array.isArray(mergedContent?.[mode]?.blocks)
-        ? mergedContent[mode].blocks
-        : [];
-      const next = [...current, ...incoming.map((b) => ({ ...b, id: newEditorBlockId() }))];
-      await updateModeDocument(topic.slug, mode, { blocks: next });
-    },
-    [topic, mode, mergedContent, updateModeDocument],
-  );
-
-  function handleOpenExtract() {
-    setShowExtract(true);
-  }
 
   const handleJsonImport = useCallback(
     async (byMode) => {
@@ -153,16 +131,6 @@ export default function TopicBlock({ topic }) {
                 Edit notes
               </button>
             )}
-            <button
-              type="button"
-              onClick={handleOpenExtract}
-              className="flex items-center gap-1.5 rounded-lg border border-primary-300 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-100 dark:border-primary-700 dark:bg-primary-900/20 dark:text-primary-400 dark:hover:bg-primary-900/30"
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-              </svg>
-              Extract Notes
-            </button>
             {isAdmin && (
               <button
                 type="button"
@@ -202,16 +170,6 @@ export default function TopicBlock({ topic }) {
         notesEditing={notesEditing}
         onNotesEditingChange={setNotesEditing}
       />
-
-      {user && showExtract ? (
-        <div className="mt-5">
-          <ExtractNotes
-            onInsert={handleAIInsert}
-            onClose={() => setShowExtract(false)}
-            panelRef={extractPanelRef}
-          />
-        </div>
-      ) : null}
 
       {isAdmin && showJsonImport ? (
         <AdminJsonImport
