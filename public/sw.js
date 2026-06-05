@@ -1,4 +1,4 @@
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 const CACHE_NAME = `prephub-v${CACHE_VERSION}`;
 
 // Replaced at build time by vite-plugin-sw with actual hashed asset paths.
@@ -45,6 +45,14 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((res) => {
+          // A deep-link refresh (e.g. /category/foo) on a host without SPA
+          // rewrites returns a 404/5xx. Don't surface it and don't cache it —
+          // fall back to the cached app shell so React Router resolves the route.
+          if (!res.ok) {
+            return caches
+              .match('/index.html')
+              .then((cached) => cached || res);
+          }
           const clone = res.clone();
           caches.open(CACHE_NAME).then((c) => c.put('/index.html', clone));
           return res;

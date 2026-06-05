@@ -252,6 +252,53 @@ function CategoryItem({
   onResetOverride,
 }) {
   const showReorderToggle = canReorder && isExpanded && topics && topics.length > 1;
+
+  // Native drag-and-drop reorder state (no external library).
+  // dragIndex = row being dragged; overIndex = row currently hovered as drop target.
+  const [dragIndex, setDragIndex] = useState(null);
+  const [overIndex, setOverIndex] = useState(null);
+
+  // Clear any in-progress drag when leaving reorder mode.
+  useEffect(() => {
+    if (!isReorderMode) {
+      setDragIndex(null);
+      setOverIndex(null);
+    }
+  }, [isReorderMode]);
+
+  const handleDragStart = useCallback((e, index) => {
+    setDragIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    // Firefox won't start a drag unless some data is set.
+    e.dataTransfer.setData('text/plain', String(index));
+  }, []);
+
+  const handleDragOver = useCallback(
+    (e, index) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      setOverIndex((prev) => (prev === index ? prev : index));
+    },
+    [],
+  );
+
+  const handleDrop = useCallback(
+    (e, index) => {
+      e.preventDefault();
+      if (dragIndex !== null && dragIndex !== index) {
+        onMoveTopic(cat.slug, dragIndex, index);
+      }
+      setDragIndex(null);
+      setOverIndex(null);
+    },
+    [dragIndex, onMoveTopic, cat.slug],
+  );
+
+  const handleDragEnd = useCallback(() => {
+    setDragIndex(null);
+    setOverIndex(null);
+  }, []);
+
   return (
     <div>
       <div
@@ -331,11 +378,32 @@ function CategoryItem({
             if (isReorderMode) {
               const isFirst = i === 0;
               const isLast = i === topics.length - 1;
+              const isDragging = dragIndex === i;
+              const isDropTarget = overIndex === i && dragIndex !== null && dragIndex !== i;
               return (
                 <div
                   key={t.slug}
-                  className="flex items-center gap-1 rounded-md px-1 py-1 text-xs text-surface-600 dark:text-surface-300"
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, i)}
+                  onDragOver={(e) => handleDragOver(e, i)}
+                  onDrop={(e) => handleDrop(e, i)}
+                  onDragEnd={handleDragEnd}
+                  className={`flex cursor-grab items-center gap-1 rounded-md px-1 py-1 text-xs text-surface-600 transition-colors active:cursor-grabbing dark:text-surface-300 ${
+                    isDragging ? 'opacity-40' : ''
+                  } ${
+                    isDropTarget
+                      ? 'ring-1 ring-primary-400 ring-inset bg-primary-50/60 dark:bg-primary-900/20'
+                      : ''
+                  }`}
                 >
+                  <svg
+                    className="h-3.5 w-3.5 shrink-0 text-surface-400 dark:text-surface-500"
+                    viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"
+                  >
+                    <circle cx="9" cy="6" r="1.5" /><circle cx="15" cy="6" r="1.5" />
+                    <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
+                    <circle cx="9" cy="18" r="1.5" /><circle cx="15" cy="18" r="1.5" />
+                  </svg>
                   <span className="flex-1 truncate" title={t.title}>{t.title}</span>
                   <button
                     type="button"
