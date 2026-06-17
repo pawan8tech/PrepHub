@@ -143,70 +143,156 @@ function getMergedBlocksForTopic(topic, getUserNotes, mode) {
   return Array.isArray(blocks) ? blocks : [];
 }
 
-function buildCategoryHtml(categoryTitle, topics, getUserNotes) {
-  const topicBlocks = topics
-    .map((topic) => {
-      const learningBlocks = getMergedBlocksForTopic(topic, getUserNotes, 'learning');
-      const interviewBlocks = getMergedBlocksForTopic(topic, getUserNotes, 'interview');
-
-      const learningHtml =
-        learningBlocks.length > 0
-          ? `<div style="margin-bottom:16px">
-            <p style="font-size:13px;font-weight:600;margin:0 0 10px;color:#1e40af">Learning</p>
-            ${blocksToHtml(learningBlocks, 3)}
-          </div>`
-          : '';
-
-      const interviewHtml =
-        interviewBlocks.length > 0
-          ? `<div style="margin-bottom:16px">
-            <p style="font-size:13px;font-weight:600;margin:0 0 10px;color:#92400e">Interview</p>
-            ${blocksToHtml(interviewBlocks, 3)}
-          </div>`
-          : '';
-
-      return `<div style="page-break-before:always">
-        <h2 style="font-size:20px;margin:0 0 12px;color:#0f172a">${escapeHtml(topic.title)}</h2>
-        ${learningHtml}
-        ${interviewHtml}
-      </div>`;
-    })
-    .join('');
-
-  return `<div style="font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#1e293b;line-height:1.6">
-    <div style="text-align:center;margin-bottom:24px">
-      <h1 style="font-size:26px;margin:0 0 4px;color:#0f172a">${escapeHtml(categoryTitle)}</h1>
-      <p style="margin:0;color:#64748b;font-size:13px">${topics.length} topic${topics.length !== 1 ? 's' : ''} &bull; PrepHub</p>
-      <p style="margin:4px 0 0;color:#94a3b8;font-size:11px">Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-    </div>
-    ${topicBlocks}
+function buildHeaderHtml(categoryTitle, topics) {
+  return `<div style="text-align:center;margin:0 0 18px">
+    <h1 style="font-size:26px;margin:0 0 4px;color:#0f172a">${escapeHtml(categoryTitle)}</h1>
+    <p style="margin:0;color:#64748b;font-size:13px">${topics.length} topic${topics.length !== 1 ? 's' : ''} &bull; PrepHub</p>
+    <p style="margin:4px 0 0;color:#94a3b8;font-size:11px">Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
   </div>`;
 }
 
+function buildTopicHtml(topic, getUserNotes) {
+  const learningBlocks = getMergedBlocksForTopic(topic, getUserNotes, 'learning');
+  const interviewBlocks = getMergedBlocksForTopic(topic, getUserNotes, 'interview');
+
+  const sectionBadge = (label, color, bg) =>
+    `<span style="display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:${color};background:${bg};padding:3px 10px;border-radius:9999px;margin:0 0 10px">${label}</span>`;
+
+  const learningHtml =
+    learningBlocks.length > 0
+      ? `<div style="margin-bottom:14px">
+        ${sectionBadge('Learning', '#1e40af', '#dbeafe')}
+        ${blocksToHtml(learningBlocks, 3)}
+      </div>`
+      : '';
+
+  const interviewHtml =
+    interviewBlocks.length > 0
+      ? `<div style="margin-bottom:14px">
+        ${sectionBadge('Interview', '#92400e', '#fef3c7')}
+        ${blocksToHtml(interviewBlocks, 3)}
+      </div>`
+      : '';
+
+  return `<div style="padding:0 0 14px;border-bottom:1px solid #e2e8f0">
+    <h2 style="font-size:19px;margin:0 0 12px;padding:0 0 6px;color:#0f172a;font-weight:700;border-bottom:2px solid #4f46e5">${escapeHtml(topic.title)}</h2>
+    ${learningHtml}
+    ${interviewHtml}
+  </div>`;
+}
+
+/**
+ * Build the ordered list of section HTML strings: a header followed by one
+ * block per topic. Each section is rendered to its own canvas (see below) so
+ * we never produce a single huge canvas — html2canvas returns a blank image
+ * once the canvas exceeds the browser's maximum dimensions, which is why large
+ * categories previously exported blank pages.
+ */
+function buildSections(categoryTitle, topics, getUserNotes) {
+  return [
+    buildHeaderHtml(categoryTitle, topics),
+    ...topics.map((topic) => buildTopicHtml(topic, getUserNotes)),
+  ];
+}
+
 export async function downloadCategoryPdf(categoryTitle, topics, getUserNotes) {
-  const html2pdf = (await import('html2pdf.js')).default;
+  const [{ jsPDF }, html2canvasMod] = await Promise.all([
+    import('jspdf'),
+    import('html2canvas'),
+  ]);
+  const html2canvas = html2canvasMod.default;
 
-  const html = buildCategoryHtml(categoryTitle, topics, getUserNotes);
+  const sections = buildSections(categoryTitle, topics, getUserNotes);
 
-  const container = document.createElement('div');
-  container.innerHTML = html;
-  document.body.appendChild(container);
+  // Off-screen host that each section is rendered into, one at a time.
+  const RENDER_WIDTH = 760; // px; maps to the PDF content width
+  const host = document.createElement('div');
+  host.style.cssText = `position:fixed;left:-10000px;top:0;width:${RENDER_WIDTH}px;background:#ffffff;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#1e293b;line-height:1.6`;
+  document.body.appendChild(host);
 
   const slug = categoryTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
+  // A4 portrait, in mm.
+  const pageW = 210;
+  const pageH = 297;
+  const margin = { top: 12, right: 14, bottom: 12, left: 14 };
+  const contentW = pageW - margin.left - margin.right;
+  const contentH = pageH - margin.top - margin.bottom;
+  const pageBottom = pageH - margin.bottom;
+  const gap = 5; // mm between sections
+
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  let cursorY = margin.top;
+
+  const sliceToJpeg = (canvas, srcY, srcH) => {
+    const slice = document.createElement('canvas');
+    slice.width = canvas.width;
+    slice.height = srcH;
+    const ctx = slice.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, slice.width, slice.height);
+    ctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
+    return slice.toDataURL('image/jpeg', 0.95);
+  };
+
+  const placeCanvas = (canvas) => {
+    const mmPerPx = contentW / canvas.width;
+    const fullHmm = canvas.height * mmPerPx;
+    const availHmm = pageBottom - cursorY;
+
+    if (fullHmm <= availHmm) {
+      // Fits in the remaining space on the current page.
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', margin.left, cursorY, contentW, fullHmm);
+      cursorY += fullHmm + gap;
+      return;
+    }
+    if (fullHmm <= contentH) {
+      // Doesn't fit here but fits on a fresh page — move it down, don't cut it.
+      pdf.addPage();
+      cursorY = margin.top;
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', margin.left, cursorY, contentW, fullHmm);
+      cursorY += fullHmm + gap;
+      return;
+    }
+    // Taller than a full page — slice it across pages, starting from the cursor.
+    let srcY = 0;
+    while (srcY < canvas.height) {
+      let availPx = Math.floor((pageBottom - cursorY) / mmPerPx);
+      if (availPx < 1) {
+        pdf.addPage();
+        cursorY = margin.top;
+        availPx = Math.floor(contentH / mmPerPx);
+      }
+      const slicePx = Math.min(availPx, canvas.height - srcY);
+      const sliceHmm = slicePx * mmPerPx;
+      pdf.addImage(sliceToJpeg(canvas, srcY, slicePx), 'JPEG', margin.left, cursorY, contentW, sliceHmm);
+      srcY += slicePx;
+      cursorY += sliceHmm;
+      if (srcY < canvas.height) {
+        pdf.addPage();
+        cursorY = margin.top;
+      }
+    }
+    cursorY += gap;
+  };
+
   try {
-    await html2pdf()
-      .set({
-        margin: [12, 14, 12, 14],
-        filename: `PrepHub-${slug}.pdf`,
-        image: { type: 'jpeg', quality: 0.95 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'], before: '[style*="page-break-before"]' },
-      })
-      .from(container)
-      .save();
+    for (const sectionHtml of sections) {
+      host.innerHTML = sectionHtml;
+      const el = host.firstElementChild;
+      if (!el) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+      if (canvas.height === 0) continue;
+      placeCanvas(canvas);
+    }
+    pdf.save(`PrepHub-${slug}.pdf`);
   } finally {
-    document.body.removeChild(container);
+    document.body.removeChild(host);
   }
 }

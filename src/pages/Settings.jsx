@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useMode } from '../context/ModeContext';
+import { useMobileActions } from '../context/MobileActionsContext';
 import { useBookmarks } from '../context/BookmarkContext';
 import { useProgress } from '../context/ProgressContext';
 import { useRecent } from '../context/RecentContext';
@@ -11,6 +12,7 @@ import { useInstallPrompt } from '../hooks/useInstallPrompt';
 export default function Settings() {
   const { theme, toggleTheme } = useTheme();
   const { mode, toggleMode } = useMode();
+  const { showMobileActions, toggleMobileActions } = useMobileActions();
   const { bookmarks, clearBookmarks } = useBookmarks();
   const { progress, clearProgress } = useProgress();
   const { recent, clearRecent } = useRecent();
@@ -54,6 +56,17 @@ export default function Settings() {
               >
                 {mode === 'learning' ? '📖 Learning' : '🎯 Interview'}
               </button>
+            }
+          />
+          <SettingsRow
+            label="Show action buttons on mobile"
+            description="Reveal Edit, Save, Cancel, Delete and Import actions on topic pages in mobile view (resets on reload)"
+            action={
+              <Toggle
+                checked={showMobileActions}
+                onToggle={toggleMobileActions}
+                ariaLabel="Toggle action buttons on mobile"
+              />
             }
           />
         </SettingsSection>
@@ -202,6 +215,26 @@ function SettingsRow({ label, description, action }) {
       </div>
       {action}
     </div>
+  );
+}
+
+function Toggle({ checked, onToggle, ariaLabel }) {
+  return (
+    <button
+      onClick={onToggle}
+      className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 ${
+        checked ? 'bg-primary-600' : 'bg-surface-300'
+      }`}
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+    >
+      <span
+        className={`flex h-5 w-5 items-center justify-center rounded-full bg-white shadow-sm transition-transform duration-300 ${
+          checked ? 'translate-x-6' : 'translate-x-1'
+        }`}
+      />
+    </button>
   );
 }
 

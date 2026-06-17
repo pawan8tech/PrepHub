@@ -10,7 +10,18 @@ createRoot(document.getElementById('root')).render(
 );
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
-  });
+  if (import.meta.env.PROD) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    });
+  } else {
+    // In dev, a previously-registered SW would serve stale modules
+    // (stale-while-revalidate) and fight Vite HMR. Tear it down.
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      regs.forEach((reg) => reg.unregister());
+    });
+    caches?.keys?.().then((keys) => {
+      keys.filter((k) => k.startsWith('prephub-')).forEach((k) => caches.delete(k));
+    });
+  }
 }

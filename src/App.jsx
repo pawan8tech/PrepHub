@@ -1,6 +1,7 @@
 import { RouterProvider } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { ModeProvider } from './context/ModeContext';
+import { MobileActionsProvider } from './context/MobileActionsContext';
 import { BookmarkProvider } from './context/BookmarkContext';
 import { ProgressProvider } from './context/ProgressContext';
 import { RecentProvider } from './context/RecentContext';
@@ -21,6 +22,7 @@ export default function App() {
             <TopicOrderProvider>
               <ThemeProvider>
                 <ModeProvider>
+                  <MobileActionsProvider>
                   <BookmarkProvider>
                     <ProgressProvider>
                       <RecentProvider>
@@ -30,6 +32,7 @@ export default function App() {
                       </RecentProvider>
                     </ProgressProvider>
                   </BookmarkProvider>
+                  </MobileActionsProvider>
                 </ModeProvider>
               </ThemeProvider>
             </TopicOrderProvider>

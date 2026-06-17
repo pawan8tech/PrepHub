@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { doc, getDoc, setDoc, deleteField, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, deleteField, serverTimestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from './AuthContext';
 import { applyOrder as applyOrderImpl } from '../utils/topicOrderArch';
@@ -61,18 +61,16 @@ export function TopicOrderProvider({ children }) {
   userRef.current = userOrder;
 
   useEffect(() => {
-    let cancelled = false;
-    getDoc(doc(db, ADMIN_DOC[0], ADMIN_DOC[1]))
-      .then((snap) => {
-        if (cancelled) return;
+    const unsub = onSnapshot(
+      doc(db, ADMIN_DOC[0], ADMIN_DOC[1]),
+      (snap) => {
         const next = extractOrderByCategory(snap);
         setAdminOrder(next);
         writeCache(next, userRef.current);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+      },
+      () => {},
+    );
+    return unsub;
   }, []);
 
   useEffect(() => {
@@ -81,18 +79,16 @@ export function TopicOrderProvider({ children }) {
       writeCache(adminRef.current, {});
       return;
     }
-    let cancelled = false;
-    getDoc(doc(db, USER_COL, user.uid))
-      .then((snap) => {
-        if (cancelled) return;
+    const unsub = onSnapshot(
+      doc(db, USER_COL, user.uid),
+      (snap) => {
         const next = extractOrderByCategory(snap);
         setUserOrder(next);
         writeCache(adminRef.current, next);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+      },
+      () => {},
+    );
+    return unsub;
   }, [user]);
 
   const applyOrder = useCallback(

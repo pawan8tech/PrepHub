@@ -7,6 +7,7 @@ import { useMergedContent } from '../hooks/useMergedContent';
 import { useNotes } from '../context/NotesContext';
 import { useMode } from '../context/ModeContext';
 import { useAuth } from '../context/AuthContext';
+import { useMobileActions } from '../context/MobileActionsContext';
 import ModeToggle from '../components/common/ModeToggle';
 import BookmarkButton from '../components/common/BookmarkButton';
 import ProgressBadge from '../components/common/ProgressBadge';
@@ -27,6 +28,10 @@ export default function TopicDetail() {
   const topic = staticTopic || noteTopic;
   const { addRecent } = useRecent();
   const { user, isAdmin } = useAuth();
+  const { showMobileActions } = useMobileActions();
+  // When the user opts in (session-only), these action buttons are revealed on
+  // mobile too; otherwise they stay hidden until the sm breakpoint.
+  const actionVisibility = showMobileActions ? 'inline-flex' : 'hidden sm:inline-flex';
   const navigate = useNavigate();
   const mergedContent = useMergedContent(topic);
   const { mode } = useMode();
@@ -152,14 +157,14 @@ export default function TopicDetail() {
                   <button
                     type="button"
                     onClick={() => topicDocRef.current?.save?.()}
-                    className="rounded-lg border border-primary-300 bg-primary-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-700 dark:border-primary-600 dark:bg-primary-500 dark:hover:bg-primary-600"
+                    className={`${actionVisibility} rounded-lg border border-primary-300 bg-primary-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-700 dark:border-primary-600 dark:bg-primary-500 dark:hover:bg-primary-600`}
                   >
                     Save notes
                   </button>
                   <button
                     type="button"
                     onClick={() => topicDocRef.current?.cancel?.()}
-                    className="rounded-lg border border-surface-200 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-200 dark:hover:bg-surface-800"
+                    className={`${actionVisibility} rounded-lg border border-surface-200 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-200 dark:hover:bg-surface-800`}
                   >
                     Cancel
                   </button>
@@ -168,7 +173,7 @@ export default function TopicDetail() {
               <button
                 type="button"
                 onClick={() => void handleEditNotes()}
-                className="rounded-lg border border-surface-200 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition-colors hover:border-primary-300 hover:bg-primary-50/60 hover:text-primary-700 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-200 dark:hover:border-primary-700 dark:hover:bg-primary-950/30 dark:hover:text-primary-300"
+                className={`${actionVisibility} rounded-lg border border-surface-200 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition-colors hover:border-primary-300 hover:bg-primary-50/60 hover:text-primary-700 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-200 dark:hover:border-primary-700 dark:hover:bg-primary-950/30 dark:hover:text-primary-300`}
               >
                 Edit notes
               </button>
@@ -177,7 +182,7 @@ export default function TopicDetail() {
                 <button
                   type="button"
                   onClick={() => setShowJsonImport(true)}
-                  className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/30"
+                  className={`${actionVisibility} items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/30`}
                 >
                   <BracesIcon />
                   Import JSON
@@ -187,7 +192,7 @@ export default function TopicDetail() {
                 type="button"
                 onClick={handleDeleteTopic}
                 disabled={deleting}
-                className="flex items-center gap-1.5 rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/30"
+                className={`${actionVisibility} items-center gap-1.5 rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/30`}
               >
                 <TrashIcon />
                 {deleting ? 'Deleting…' : isAdmin ? 'Delete topic' : 'Remove from my notes'}

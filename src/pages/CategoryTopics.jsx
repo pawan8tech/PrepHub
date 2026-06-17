@@ -9,6 +9,7 @@ import { downloadCategoryPdf } from '../utils/pdfExport';
 import TopicBlock from '../components/topic/TopicBlock';
 import EmptyState from '../components/common/EmptyState';
 import AdminBulkImport from '../components/admin/AdminBulkImport';
+import AdminReorderJson from '../components/admin/AdminReorderJson';
 
 export default function CategoryTopics() {
   const { slug } = useParams();
@@ -24,6 +25,7 @@ export default function CategoryTopics() {
   const [filter, setFilter] = useState('');
   const [pdfLoading, setPdfLoading] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
+  const [showReorderJson, setShowReorderJson] = useState(false);
   const headerRef = useRef(null);
 
   const handleDownloadPdf = async () => {
@@ -132,6 +134,19 @@ export default function CategoryTopics() {
               Bulk JSON
             </button>
           )}
+          {isAdmin && topics.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setShowReorderJson(true)}
+              className="hidden shrink-0 items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-100 dark:border-violet-700 dark:bg-violet-900/20 dark:text-violet-300 dark:hover:bg-violet-900/30 sm:inline-flex"
+              title="Reorder topics from a JSON list"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h13M3 12h9M3 17h5m9-9l4 4-4 4" />
+              </svg>
+              Reorder JSON
+            </button>
+          )}
           {topics.length > 0 && (
             <button
               onClick={handleDownloadPdf}
@@ -231,6 +246,13 @@ export default function CategoryTopics() {
         <AdminBulkImport
           defaultCategory={slug}
           onClose={() => setShowBulkImport(false)}
+        />
+      ) : null}
+
+      {isAdmin && showReorderJson ? (
+        <AdminReorderJson
+          defaultCategory={slug}
+          onClose={() => setShowReorderJson(false)}
         />
       ) : null}
     </div>
