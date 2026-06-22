@@ -502,7 +502,8 @@ function applyBlockConvert(blocks, blockId, command, seed) {
   return blocks.map((x) => (x.id === id ? next : x));
 }
 
-export function BlockListEditor({ blocks, onChange, depth, allowQna = true }) {
+export function BlockListEditor({ blocks, onChange, depth, allowQna = true, onAddTopic }) {
+  const allowAddTopic = typeof onAddTopic === 'function';
   const taRefs = useRef({});
   const wrapRefs = useRef({});
   const [focusTarget, setFocusTarget] = useState(null);
@@ -690,7 +691,7 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true }) {
       setSlash(null);
       return;
     }
-    const filtered = filterBlockConvertCommands(s.query, { allowQna });
+    const filtered = filterBlockConvertCommands(s.query, { allowQna, allowAddTopic });
     if (!filtered.length) {
       slashSessionKeyRef.current = '';
       setSlash(null);
@@ -713,7 +714,7 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true }) {
       ta,
       wrap,
     });
-  }, [allowQna]);
+  }, [allowQna, allowAddTopic]);
 
   useLayoutEffect(() => {
     if (!slash?.ta || !slash.wrap) return;
@@ -747,6 +748,21 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true }) {
       const block = blocks.find((b) => b.id === blockId);
       if (!block) {
         closeSlash();
+        return;
+      }
+
+      if (commandValue === 'add-topic') {
+        // Not a block conversion — strip the typed "/" token, keep the caret here,
+        // and let the host reveal the inline "new topic" form below this note.
+        if (block.type === 'list' && typeof listItemIndex === 'number') {
+          const items = [...(block.items || []).map(String)];
+          items[listItemIndex] = cleaned;
+          onChange(updateBlock(blocks, blockId, { items }));
+        } else {
+          onChange(updateBlock(blocks, blockId, { content: cleaned }));
+        }
+        closeSlash();
+        onAddTopic?.();
         return;
       }
 
@@ -793,7 +809,7 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true }) {
       const focusId = newBlock.type === 'list' ? `${newBlock.id}:0` : newBlock.id;
       setFocusTarget({ id: focusId, caret: 'start' });
     },
-    [blocks, onChange, closeSlash],
+    [blocks, onChange, closeSlash, onAddTopic],
   );
 
   const handleSlashKeyDown = useCallback(
@@ -986,6 +1002,7 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true }) {
                   }}
                   rows={Math.max(1, String(block.content ?? '').split('\n').length)}
                   className={`block min-h-[1.5em] w-full resize-none whitespace-pre-line leading-snug ${inputGhost}`}
+                  data-focus-key={block.id}
                   aria-label="Heading"
                   placeholder={`Heading ${lv}`}
                 />
@@ -1031,6 +1048,7 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true }) {
                 }}
                 rows={Math.max(2, String(block.content ?? '').split('\n').length)}
                 className={`block min-h-[2.5rem] resize-y whitespace-pre-line text-[15px] leading-[1.75] text-surface-700 dark:text-surface-300 ${inputGhost}`}
+                data-focus-key={block.id}
                 aria-label="Text block"
                 placeholder="Type '/' for commands, or start writing…"
               />
@@ -1125,6 +1143,7 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true }) {
                       }}
                       rows={Math.max(1, item.split('\n').length)}
                       className={`min-h-[1.25em] w-full resize-none whitespace-pre-line ${inputGhost}`}
+                      data-focus-key={`${block.id}:${li}`}
                       aria-label={`List item ${li + 1}`}
                       placeholder="List item"
                     />
@@ -1185,6 +1204,7 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true }) {
                   rows={Math.max(4, String(block.content ?? '').split('\n').length)}
                   spellCheck={false}
                   className={`block w-full resize-y font-mono text-[13px] leading-relaxed text-surface-800 dark:text-surface-100 ${inputGhost}`}
+                  data-focus-key={block.id}
                   aria-label="Code"
                   placeholder="// Paste or type code…"
                 />
@@ -1262,6 +1282,7 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true }) {
                   }}
                   rows={Math.max(2, String(block.content ?? '').split('\n').length)}
                   className={`block min-h-[2rem] w-full resize-y whitespace-pre-line ${inputGhost}`}
+                  data-focus-key={block.id}
                   aria-label="Callout text"
                   placeholder={`Add ${v === 'important' || v === 'info' ? 'an' : 'a'} ${label.toLowerCase()}…`}
                 />
@@ -1485,6 +1506,7 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true }) {
                   }}
                   rows={Math.max(1, question.split('\n').length)}
                   className={`min-h-[1.5em] resize-none whitespace-pre-line font-medium text-surface-900 dark:text-surface-100 ${inputGhost}`}
+                  data-focus-key={`${block.id}:q`}
                   aria-label="Question"
                   placeholder="Question"
                 />
@@ -1548,8 +1570,34 @@ export function DocumentRenderer({ data, depth, draftRootBlocks, onDraftRootBloc
 
 const DEBUG_TOPIC_DOC = import.meta.env.DEV;
 
+const AUTOSAVE_DELAY_MS = 4000;
+// Editor-level undo/redo: consecutive text edits within this window collapse into a
+// single undo step; structural changes (add/delete/convert/split) always stand alone.
+const UNDO_BURST_MS = 700;
+const UNDO_MAX_STEPS = 100;
+
+/**
+ * Structure-only fingerprint of a draft (types + array shapes, never content), used to
+ * tell a "structural" change (new/removed/converted block, list/table/qna shape) apart
+ * from plain typing so undo can group typing but isolate structural edits.
+ */
+function structuralSig(blocks) {
+  if (!Array.isArray(blocks)) return '';
+  return blocks
+    .map((b) => {
+      if (!b || typeof b !== 'object') return 'x';
+      let s = b.type || '?';
+      if (b.type === 'heading') s += `#${b.level || 2}`;
+      else if (b.type === 'list') s += `[${(b.items || []).length}]`;
+      else if (b.type === 'table') s += `[${(b.headers || []).length}x${(b.rows || []).length}]`;
+      else if (b.type === 'qna') s += `(${structuralSig(b.answer || [])})`;
+      return s;
+    })
+    .join('|');
+}
+
 const TopicDocument = forwardRef(function TopicDocument(
-  { topicBlocks, topicSlug, mode, editorSeedKey, notesEditing: notesEditingProp, onNotesEditingChange },
+  { topicBlocks, topicSlug, mode, notesEditing: notesEditingProp, onNotesEditingChange, onAddTopic },
   ref,
 ) {
   const { updateModeDocument } = useNotes();
@@ -1557,7 +1605,22 @@ const TopicDocument = forwardRef(function TopicDocument(
   const [draftRootBlocks, setDraftRootBlocks] = useState([]);
   const draftRef = useRef([]);
   const wasEditingRef = useRef(false);
-  const lastEditorSeedRef = useRef('');
+  // Slug/mode the live draft was seeded from — lets us flush autosave under the
+  // right note when the topic/mode changes, and decide when to re-seed.
+  const seedSlugRef = useRef('');
+  const seedModeRef = useRef('');
+  const autosaveTimerRef = useRef(null);
+  // Only persist topics the user actually edited, so toggling edit→view doesn't
+  // write user copies for every untouched topic in the category.
+  const dirtyRef = useRef(false);
+  // Editor-level undo/redo history of whole-draft snapshots ({ blocks, sel }).
+  const pastRef = useRef([]);
+  const futureRef = useRef([]);
+  const burstActiveRef = useRef(false);
+  const lastEditAtRef = useRef(0);
+  // Caret restoration for undo/redo.
+  const editorRef = useRef(null);
+  const pendingFocusRef = useRef(null);
 
   const controlled = typeof onNotesEditingChange === 'function';
   const editing = controlled ? Boolean(notesEditingProp) : internalEditing;
@@ -1572,74 +1635,201 @@ const TopicDocument = forwardRef(function TopicDocument(
     draftRef.current = draftRootBlocks;
   }, [draftRootBlocks]);
 
-  const setEditing = useCallback(
-    (v) => {
-      const next = Boolean(v);
-      if (controlled) onNotesEditingChange(next);
-      else setInternalEditing(next);
+  // Where the caret currently is, as a (block field key, offset) pair, or null.
+  const captureSelection = useCallback(() => {
+    const root = editorRef.current;
+    const el = typeof document !== 'undefined' ? document.activeElement : null;
+    if (!root || !el || !root.contains(el)) return null;
+    const key = el.getAttribute?.('data-focus-key');
+    if (!key) return null;
+    const start = typeof el.selectionStart === 'number' ? el.selectionStart : null;
+    const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
+    return { key, start, end };
+  }, []);
+
+  // After an undo/redo re-render, put the caret back where it was for that snapshot.
+  useLayoutEffect(() => {
+    const sel = pendingFocusRef.current;
+    if (!sel) return;
+    pendingFocusRef.current = null;
+    const root = editorRef.current;
+    if (!root) return;
+    const el = root.querySelector(`[data-focus-key="${sel.key}"]`);
+    if (!el || typeof el.focus !== 'function') return;
+    el.focus();
+    if (typeof el.setSelectionRange === 'function') {
+      const len = el.value?.length ?? 0;
+      const s = sel.start == null ? len : Math.min(sel.start, len);
+      const e = sel.end == null ? s : Math.min(sel.end, len);
+      el.setSelectionRange(s, e);
+    }
+  }, [draftRootBlocks]);
+
+  const persistDraft = useCallback(
+    (slug, m, blocks) => {
+      if (!slug || !m) return;
+      updateModeDocument(slug, m, { blocks: cloneBlocksForPersistence(blocks) });
     },
-    [controlled, onNotesEditingChange],
+    [updateModeDocument],
   );
 
-  const cancelEdit = useCallback(() => {
-    setEditing(false);
-  }, [setEditing]);
+  // Persist the current draft immediately (used on exit / topic switch). Cancels any
+  // pending debounce, and is a no-op unless the draft was actually edited.
+  const flushAutosave = useCallback(
+    (slug, m) => {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+      if (!dirtyRef.current) return;
+      const blocks = draftRef.current;
+      if (Array.isArray(blocks) && blocks.length) persistDraft(slug, m, blocks);
+      dirtyRef.current = false;
+    },
+    [persistDraft],
+  );
 
+  const scheduleAutosave = useCallback(() => {
+    const slug = seedSlugRef.current || topicSlug;
+    const m = seedModeRef.current || mode;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null;
+      if (!dirtyRef.current) return;
+      persistDraft(slug, m, draftRef.current);
+      dirtyRef.current = false;
+    }, AUTOSAVE_DELAY_MS);
+  }, [persistDraft, topicSlug, mode]);
+
+  // Apply a new draft (from editing, undo, or redo): mark dirty + debounce a save.
+  const applyDraft = useCallback(
+    (nextBlocks) => {
+      setDraftRootBlocks(nextBlocks);
+      draftRef.current = nextBlocks;
+      dirtyRef.current = true;
+      scheduleAutosave();
+    },
+    [scheduleAutosave],
+  );
+
+  // Editor edits flow through here: push an undo step (grouping fast typing), then apply.
+  const handleDraftChange = useCallback(
+    (next) => {
+      const prev = draftRef.current;
+      const structural = structuralSig(prev) !== structuralSig(next);
+      const now = Date.now();
+      const continueBurst =
+        !structural && burstActiveRef.current && now - lastEditAtRef.current < UNDO_BURST_MS;
+      if (!continueBurst) {
+        pastRef.current = [...pastRef.current, { blocks: prev, sel: captureSelection() }].slice(
+          -UNDO_MAX_STEPS,
+        );
+        futureRef.current = [];
+      }
+      burstActiveRef.current = !structural;
+      lastEditAtRef.current = now;
+      applyDraft(next);
+    },
+    [applyDraft, captureSelection],
+  );
+
+  const undo = useCallback(() => {
+    if (!pastRef.current.length) return;
+    const entry = pastRef.current[pastRef.current.length - 1];
+    pastRef.current = pastRef.current.slice(0, -1);
+    futureRef.current = [{ blocks: draftRef.current, sel: captureSelection() }, ...futureRef.current].slice(
+      0,
+      UNDO_MAX_STEPS,
+    );
+    burstActiveRef.current = false;
+    pendingFocusRef.current = entry.sel;
+    applyDraft(entry.blocks);
+  }, [applyDraft, captureSelection]);
+
+  const redo = useCallback(() => {
+    if (!futureRef.current.length) return;
+    const entry = futureRef.current[0];
+    futureRef.current = futureRef.current.slice(1);
+    pastRef.current = [...pastRef.current, { blocks: draftRef.current, sel: captureSelection() }].slice(
+      -UNDO_MAX_STEPS,
+    );
+    burstActiveRef.current = false;
+    pendingFocusRef.current = entry.sel;
+    applyDraft(entry.blocks);
+  }, [applyDraft, captureSelection]);
+
+  // Intercept undo/redo at the editor (capture phase) so it covers block operations,
+  // not just text inside the focused textarea.
+  const handleEditorKeyDown = useCallback(
+    (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        undo();
+      } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+        e.preventDefault();
+        e.stopPropagation();
+        redo();
+      }
+    },
+    [undo, redo],
+  );
+
+  // Seed the editable draft on entering edit mode (and re-seed when the topic or mode
+  // changes). External note/source churn — including our own autosave — never clobbers
+  // an in-progress draft.
   useLayoutEffect(() => {
     if (!editing) {
+      if (wasEditingRef.current) {
+        // Leaving edit mode — save whatever is in the draft.
+        flushAutosave(seedSlugRef.current || topicSlug, seedModeRef.current || mode);
+      }
       wasEditingRef.current = false;
-      lastEditorSeedRef.current = '';
+      seedSlugRef.current = '';
+      seedModeRef.current = '';
       return;
     }
 
     const entering = !wasEditingRef.current;
-    const seed = editorSeedKey ?? '';
-    const seedChanged = seed !== lastEditorSeedRef.current;
+    const sigChanged = seedSlugRef.current !== topicSlug || seedModeRef.current !== mode;
 
-    if (entering || seedChanged) {
-      if (!empty) {
-        setDraftRootBlocks(cloneBlocksForEditor(topicBlocks));
-      } else {
-        setDraftRootBlocks([createBlock('text')]);
+    if (entering || sigChanged) {
+      if (!entering && sigChanged) {
+        // Switched topic/mode while editing — persist the previous draft first.
+        flushAutosave(seedSlugRef.current, seedModeRef.current);
       }
-      lastEditorSeedRef.current = seed;
+      const seed = empty ? [createBlock('text')] : cloneBlocksForEditor(topicBlocks);
+      setDraftRootBlocks(seed);
+      draftRef.current = seed;
+      dirtyRef.current = false;
+      // Fresh draft → fresh undo history.
+      pastRef.current = [];
+      futureRef.current = [];
+      burstActiveRef.current = false;
+      seedSlugRef.current = topicSlug;
+      seedModeRef.current = mode;
       if (DEBUG_TOPIC_DOC) {
         // eslint-disable-next-line no-console
-        console.log('[notes-edit] TopicDocument seed draft', {
-          topicSlug,
-          mode,
-          entering,
-          seedChanged,
-          editorSeedKey: seed,
-        });
+        console.log('[notes-edit] TopicDocument seed draft', { topicSlug, mode, entering, sigChanged });
       }
     }
     wasEditingRef.current = true;
-  }, [editing, topicBlocks, empty, editorSeedKey, topicSlug, mode]);
-
-  const handleSaveDraft = useCallback(async () => {
-    const blocks = cloneBlocksForPersistence(draftRef.current);
-    await updateModeDocument(topicSlug, mode, { blocks });
-    setEditing(false);
-  }, [topicSlug, mode, updateModeDocument, setEditing]);
-
-  const handleCancelDraft = useCallback(() => {
-    setEditing(false);
-  }, [setEditing]);
+  }, [editing, topicBlocks, empty, topicSlug, mode, flushAutosave]);
 
   useImperativeHandle(
     ref,
     () => ({
-      save: () => handleSaveDraft(),
-      cancel: () => handleCancelDraft(),
+      save: () => flushAutosave(seedSlugRef.current || topicSlug, seedModeRef.current || mode),
     }),
-    [handleSaveDraft, handleCancelDraft],
+    [flushAutosave, topicSlug, mode],
   );
 
   return (
-    <div className="topic-document">
+    <div className="topic-document" ref={editorRef} onKeyDownCapture={editing ? handleEditorKeyDown : undefined}>
       {editing ? (
-        <BlockListEditor blocks={draftRootBlocks} onChange={setDraftRootBlocks} depth={0} />
+        <BlockListEditor blocks={draftRootBlocks} onChange={handleDraftChange} depth={0} onAddTopic={onAddTopic} />
         ) : empty ? (
         <p className="text-sm text-surface-500 dark:text-surface-400">
           {mode === 'learning' ? 'No learning notes for this topic yet.' : 'No interview notes for this topic yet.'}

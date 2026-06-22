@@ -10,7 +10,6 @@ import Bookmarks from '../pages/Bookmarks';
 import RecentlyViewed from '../pages/RecentlyViewed';
 import Progress from '../pages/Progress';
 import Settings from '../pages/Settings';
-import NewTopic from '../pages/NewTopic';
 import NotFound from '../pages/NotFound';
 
 export const router = createBrowserRouter([
@@ -20,7 +19,6 @@ export const router = createBrowserRouter([
       { index: true, element: <Dashboard /> },
       { path: 'categories', element: <Categories /> },
       { path: 'category/:slug', element: <CategoryTopics /> },
-      { path: 'topic/new', element: <NewTopic /> },
       { path: 'topic/:slug', element: <TopicDetail /> },
       { path: 'dsa', element: <DSAOverview /> },
       { path: 'dsa/:slug', element: <DSATopicDetail /> },

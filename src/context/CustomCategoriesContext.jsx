@@ -85,6 +85,40 @@ export function CustomCategoriesProvider({ children }) {
     [user, customCategories],
   );
 
+  const updateCategory = useCallback(
+    async (slug, title) => {
+      if (!user || !slug) return;
+      const nextTitle = (title || '').trim();
+      if (!nextTitle) return;
+      const ref = doc(db, 'users', user.uid, 'customCategories', slug);
+      // setDoc + merge so renaming a synthesized (record-less) category materializes it.
+      await setDoc(
+        ref,
+        { title: nextTitle, slug, isCustom: true, updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+      setCustomCategories((prev) => {
+        const exists = prev.some((c) => c.slug === slug);
+        if (exists) {
+          return prev.map((c) => (c.slug === slug ? { ...c, title: nextTitle } : c));
+        }
+        return [
+          ...prev,
+          {
+            id: slug,
+            slug,
+            title: nextTitle,
+            icon: '📁',
+            description: `Custom category: ${nextTitle}`,
+            color: COLORS[prev.length % COLORS.length],
+            isCustom: true,
+          },
+        ];
+      });
+    },
+    [user],
+  );
+
   const deleteCategory = useCallback(
     async (slug) => {
       if (!user) return;
@@ -101,7 +135,7 @@ export function CustomCategoriesProvider({ children }) {
 
   return (
     <CustomCategoriesContext.Provider
-      value={{ customCategories, loading, addCategory, deleteCategory, getCustomCategory }}
+      value={{ customCategories, loading, addCategory, updateCategory, deleteCategory, getCustomCategory }}
     >
       {children}
     </CustomCategoriesContext.Provider>

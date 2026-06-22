@@ -14,11 +14,16 @@ export const BLOCK_CONVERT_COMMANDS = [
   { label: 'Q & A', value: 'qna' },
 ];
 
+/** Action command — creates a brand new topic rather than converting/inserting a block. */
+export const ADD_TOPIC_COMMAND = { label: 'Add topic', value: 'add-topic' };
+
 export function filterBlockConvertCommands(query, options = {}) {
-  const { allowQna = true } = options;
-  const base = allowQna
+  const { allowQna = true, allowAddTopic = false } = options;
+  let base = allowQna
     ? BLOCK_CONVERT_COMMANDS
     : BLOCK_CONVERT_COMMANDS.filter((c) => c.value !== 'qna');
+  // Surface "Add topic" at the top so it's visible without scrolling the menu.
+  if (allowAddTopic) base = [ADD_TOPIC_COMMAND, ...base];
   const q = (query || '').trim().toLowerCase();
   if (!q) return [...base];
   return base.filter(

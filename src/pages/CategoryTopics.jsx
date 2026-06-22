@@ -7,6 +7,7 @@ import { useTopicOrder } from '../context/TopicOrderContext';
 import { useAuth } from '../context/AuthContext';
 import { downloadCategoryPdf } from '../utils/pdfExport';
 import TopicBlock from '../components/topic/TopicBlock';
+import NewTopicInline from '../components/topic/NewTopicInline';
 import EmptyState from '../components/common/EmptyState';
 import AdminBulkImport from '../components/admin/AdminBulkImport';
 import AdminReorderJson from '../components/admin/AdminReorderJson';
@@ -21,11 +22,13 @@ export default function CategoryTopics() {
   const rawTopics = getTopicsByCategory(slug);
   const topics = useMemo(() => applyOrder(slug, rawTopics), [applyOrder, slug, rawTopics]);
   const { getUserNotes } = useNotes();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [filter, setFilter] = useState('');
   const [pdfLoading, setPdfLoading] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [showReorderJson, setShowReorderJson] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [showNewTopic, setShowNewTopic] = useState(false);
   const headerRef = useRef(null);
 
   const handleDownloadPdf = async () => {
@@ -121,6 +124,35 @@ export default function CategoryTopics() {
               {topics.length} topic{topics.length !== 1 && 's'}
             </p>
           </div>
+          {user && topics.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setEditMode((v) => !v)}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                editMode
+                  ? 'border-primary-300 bg-primary-600 text-white hover:bg-primary-700 dark:border-primary-600 dark:bg-primary-500 dark:hover:bg-primary-600'
+                  : 'border-surface-200 bg-white text-surface-600 hover:border-primary-300 hover:text-primary-600 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-300 dark:hover:border-primary-600 dark:hover:text-primary-400'
+              }`}
+              title={editMode ? 'Switch to view mode' : 'Edit all topics in this category'}
+            >
+              {editMode ? (
+                <>
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  View
+                </>
+              ) : (
+                <>
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  Edit
+                </>
+              )}
+            </button>
+          )}
           {isAdmin && (
             <button
               type="button"
@@ -223,21 +255,50 @@ export default function CategoryTopics() {
         </div>
       </div>
 
+      {editMode && (
+        <div className="rounded-lg border border-primary-200 bg-primary-50/60 px-4 py-2 text-xs text-primary-700 dark:border-primary-800 dark:bg-primary-950/30 dark:text-primary-300">
+          Editing all topics — changes save automatically. Click “View” when you’re done.
+        </div>
+      )}
+
       {/* All topics rendered inline */}
       {filtered.length === 0 ? (
-        <EmptyState
-          icon="📝"
-          title={filter ? 'No matching topics' : 'No topics yet'}
-          description={
-            filter
-              ? `No topics matching "${filter}" in ${category.title}.`
-              : `Topics for ${category.title} will appear here once content is added.`
-          }
-        />
+        showNewTopic && user ? (
+          <NewTopicInline
+            category={slug}
+            afterSlug={null}
+            onCreated={() => setEditMode(true)}
+            onClose={() => setShowNewTopic(false)}
+          />
+        ) : (
+          <EmptyState
+            icon="📝"
+            title={filter ? 'No matching topics' : 'No topics yet'}
+            description={
+              filter
+                ? `No topics matching "${filter}" in ${category.title}.`
+                : `Topics for ${category.title} will appear here once content is added.`
+            }
+            action={
+              user && !filter ? (
+                <button
+                  type="button"
+                  onClick={() => setShowNewTopic(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-primary-300 bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700 dark:border-primary-600 dark:bg-primary-500 dark:hover:bg-primary-600"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  Add topic
+                </button>
+              ) : null
+            }
+          />
+        )
       ) : (
         <div className="space-y-6">
           {filtered.map((topic) => (
-            <TopicBlock key={topic.slug} topic={topic} />
+            <TopicBlock key={topic.slug} topic={topic} editing={editMode} />
           ))}
         </div>
       )}

@@ -1,34 +1,27 @@
-import { useEffect, useCallback, useState, useRef } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useRecent } from '../../context/RecentContext';
 import { useAuth } from '../../context/AuthContext';
 import { useMergedContent } from '../../hooks/useMergedContent';
 import { useNotes } from '../../context/NotesContext';
 import { useMode } from '../../context/ModeContext';
-import { useMobileActions } from '../../context/MobileActionsContext';
-import ModeToggle from '../common/ModeToggle';
-import BookmarkButton from '../common/BookmarkButton';
-import ProgressBadge from '../common/ProgressBadge';
+import TopicMenu from '../common/TopicMenu';
 import SyncStatus from '../common/SyncStatus';
 import TopicContent from './TopicContent';
 import ExternalLinks from './ExternalLinks';
+import NewTopicInline from './NewTopicInline';
 import AdminJsonImport from '../admin/AdminJsonImport';
 
-export default function TopicBlock({ topic }) {
+export default function TopicBlock({ topic, editing = false }) {
   const { addRecent } = useRecent();
   const { user, isAdmin } = useAuth();
   const mergedContent = useMergedContent(topic);
-  const { updateModeDocument, ensurePersonalNoteCopy, getNoteSource, deleteTopic } = useNotes();
+  const { updateModeDocument, deleteTopic } = useNotes();
   const { mode } = useMode();
-  const { showMobileActions } = useMobileActions();
-  // When the user opts in (session-only), the action bar and its buttons are
-  // revealed on mobile too; otherwise they stay hidden until the sm breakpoint.
-  const actionBarVisibility = showMobileActions ? 'flex' : 'hidden sm:flex';
-  const actionVisibility = showMobileActions ? 'inline-flex' : 'hidden sm:inline-flex';
   const [showJsonImport, setShowJsonImport] = useState(false);
-  const [notesEditing, setNotesEditing] = useState(false);
+  const [showNewTopic, setShowNewTopic] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const topicDocRef = useRef(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const handleDeleteTopic = useCallback(async () => {
     if (!topic || deleting) return;
@@ -63,21 +56,32 @@ export default function TopicBlock({ topic }) {
     if (topic) addRecent(topic.slug);
   }, [topic, addRecent]);
 
-  const handleEditNotes = useCallback(async () => {
-    if (!topic) return;
-    try {
-      await ensurePersonalNoteCopy(topic.slug, topic.title, mode, mergedContent);
-    } catch (err) {
-      if (import.meta.env.DEV) {
-        // eslint-disable-next-line no-console
-        console.error('[notes-edit] ensurePersonalNoteCopy failed', err);
-      }
-      return;
-    }
-    setNotesEditing(true);
-  }, [topic, mergedContent, ensurePersonalNoteCopy, mode]);
-
   if (!topic || !mergedContent) return null;
+
+  // Topic actions live inside the ⋮ menu — always available to a signed-in user.
+  const menuActions = [];
+  if (user) {
+    menuActions.push({
+      label: 'Import JSON',
+      onClick: () => setShowJsonImport(true),
+      icon: (
+        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8 4H7a2 2 0 00-2 2v3a2 2 0 01-2 2v2a2 2 0 012 2v3a2 2 0 002 2h1m8-16h1a2 2 0 012 2v3a2 2 0 002 2v2a2 2 0 00-2 2v3a2 2 0 01-2 2h-1" />
+        </svg>
+      ),
+    });
+    menuActions.push({
+      label: deleting ? 'Deleting…' : isAdmin ? 'Delete topic' : 'Remove from my notes',
+      onClick: handleDeleteTopic,
+      danger: true,
+      disabled: deleting,
+      icon: (
+        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
+        </svg>
+      ),
+    });
+  }
 
   return (
     <article
@@ -85,8 +89,9 @@ export default function TopicBlock({ topic }) {
       data-topic-slug={topic.slug}
       className="scroll-mt-20 rounded-xl border border-surface-200 bg-white p-5 dark:border-surface-800 dark:bg-surface-900 sm:p-6"
     >
-      {/* Header — sticks below the page's category banner while scrolling through the topic */}
-      <div className="sticky top-28 z-10 mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-surface-200 bg-white py-2 dark:border-surface-800 dark:bg-surface-900">
+      {/* Header — sticks below the page's category banner while scrolling through the topic.
+          Raise z-index while the ⋮ menu is open so its dropdown clears neighbouring sticky headers. */}
+      <div className={`sticky top-28 mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-surface-200 bg-white py-2 dark:border-surface-800 dark:bg-surface-900 ${menuOpen ? 'z-40' : 'z-10'}`}>
         <div className="min-w-0 flex-1">
           <Link
             to={`/topic/${topic.slug}`}
@@ -101,83 +106,29 @@ export default function TopicBlock({ topic }) {
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <BookmarkButton slug={topic.slug} size="sm" />
+          <TopicMenu slug={topic.slug} size="sm" actions={menuActions} onOpenChange={setMenuOpen} />
         </div>
       </div>
 
-      {/* Actions — hidden on mobile by default; revealed via the Settings toggle */}
-      <div className={`mb-4 ${actionBarVisibility} flex-wrap items-center gap-3`}>
-        {/* <ModeToggle /> */}
-        <ProgressBadge slug={topic.slug} />
-        {user && (
-          <>
-            {notesEditing ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => topicDocRef.current?.save?.()}
-                  className={`${actionVisibility} rounded-lg border border-primary-300 bg-primary-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-700 dark:border-primary-600 dark:bg-primary-500 dark:hover:bg-primary-600`}
-                >
-                  Save notes
-                </button>
-                <button
-                  type="button"
-                  onClick={() => topicDocRef.current?.cancel?.()}
-                  className={`${actionVisibility} rounded-lg border border-surface-200 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-200 dark:hover:bg-surface-800`}
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void handleEditNotes()}
-                className={`${actionVisibility} rounded-lg border border-surface-200 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition-colors hover:border-primary-300 hover:bg-primary-50/60 hover:text-primary-700 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-200 dark:hover:border-primary-700 dark:hover:bg-primary-950/30 dark:hover:text-primary-300`}
-              >
-                Edit notes
-              </button>
-            )}
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() => setShowJsonImport(true)}
-                className={`${actionVisibility} items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/30`}
-              >
-                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 4H7a2 2 0 00-2 2v3a2 2 0 01-2 2v2a2 2 0 012 2v3a2 2 0 002 2h1m8-16h1a2 2 0 012 2v3a2 2 0 002 2v2a2 2 0 00-2 2v3a2 2 0 01-2 2h-1" />
-                </svg>
-                Import JSON
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={handleDeleteTopic}
-              disabled={deleting}
-              className={`${actionVisibility} items-center gap-1.5 rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/30`}
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
-              </svg>
-              {deleting ? 'Deleting…' : isAdmin ? 'Delete topic' : 'Remove from my notes'}
-            </button>
-          </>
-        )}
-      </div>
-
-      <hr className="mb-5 hidden border-surface-200 dark:border-surface-800 sm:block" />
-
-      {/* Topic notes (document view) */}
+      {/* Topic notes — editable only when the category is in edit mode (autosaves) */}
       <TopicContent
-        ref={topicDocRef}
         content={mergedContent}
         topicSlug={topic.slug}
-        topicRootBlocks={Array.isArray(topic?.blocks) && topic.blocks.length > 0 ? topic.blocks : undefined}
-        noteSource={getNoteSource(topic.slug, mode)}
-        notesEditing={notesEditing}
-        onNotesEditingChange={setNotesEditing}
+        notesEditing={user ? editing : false}
+        onNotesEditingChange={() => {}}
+        onAddTopic={() => setShowNewTopic(true)}
       />
 
-      {isAdmin && showJsonImport ? (
+      {/* Inline "new topic" form, opened from the `/add topic` slash command */}
+      {showNewTopic ? (
+        <NewTopicInline
+          category={topic.category}
+          afterSlug={topic.slug}
+          onClose={() => setShowNewTopic(false)}
+        />
+      ) : null}
+
+      {showJsonImport ? (
         <AdminJsonImport
           currentMode={mode}
           onAppend={handleJsonImport}

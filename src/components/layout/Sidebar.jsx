@@ -12,7 +12,6 @@ const navItems = [
   { to: '/', label: 'Dashboard', icon: DashboardIcon },
   { to: '/categories', label: 'Categories', icon: GridIcon },
   { to: '/dsa', label: 'DSA', icon: CodeIcon },
-  { to: '/topic/new', label: 'Add Topic', icon: PlusIcon },
   { to: '/bookmarks', label: 'Bookmarks', icon: BookmarkIcon },
   { to: '/recent', label: 'Recent', icon: ClockIcon },
   { to: '/progress', label: 'Progress', icon: ChartIcon },
@@ -510,14 +509,6 @@ function ChartIcon({ className }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-    </svg>
-  );
-}
-
-function PlusIcon({ className }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
     </svg>
   );
 }

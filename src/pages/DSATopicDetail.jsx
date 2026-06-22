@@ -1,16 +1,12 @@
-import { useEffect, useCallback, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getDSATopicBySlug } from '../data';
 import { useRecent } from '../context/RecentContext';
 import { useAuth } from '../context/AuthContext';
 import { useDSAProblems } from '../context/DSAProblemContext';
 import { useMergedContent } from '../hooks/useMergedContent';
-import { useNotes } from '../context/NotesContext';
-import { useMode } from '../context/ModeContext';
-import { useMobileActions } from '../context/MobileActionsContext';
 import ModeToggle from '../components/common/ModeToggle';
-import BookmarkButton from '../components/common/BookmarkButton';
-import ProgressBadge from '../components/common/ProgressBadge';
+import TopicMenu from '../components/common/TopicMenu';
 import SyncStatus from '../components/common/SyncStatus';
 import TopicContent from '../components/topic/TopicContent';
 import QuestionList from '../components/topic/QuestionList';
@@ -31,32 +27,11 @@ export default function DSATopicDetail() {
   const { user } = useAuth();
   const { getSolvedCount, getImportantCount, getSolvedPercentage } = useDSAProblems();
   const mergedContent = useMergedContent(topic);
-  const { mode } = useMode();
-  const { ensurePersonalNoteCopy, getNoteSource } = useNotes();
-  const { showMobileActions } = useMobileActions();
-  // When the user opts in (session-only), these action buttons are revealed on
-  // mobile too; otherwise they stay hidden until the sm breakpoint.
-  const actionVisibility = showMobileActions ? 'inline-flex' : 'hidden sm:inline-flex';
   const [notesEditing, setNotesEditing] = useState(false);
-  const topicDocRef = useRef(null);
 
   useEffect(() => {
     if (topic) addRecent(topic.slug);
   }, [topic, addRecent]);
-
-  const handleEditNotes = useCallback(async () => {
-    if (!topic) return;
-    try {
-      await ensurePersonalNoteCopy(topic.slug, topic.title, mode, mergedContent);
-    } catch (err) {
-      if (import.meta.env.DEV) {
-        // eslint-disable-next-line no-console
-        console.error('[notes-edit] ensurePersonalNoteCopy failed', err);
-      }
-      return;
-    }
-    setNotesEditing(true);
-  }, [topic, mergedContent, ensurePersonalNoteCopy, mode]);
 
   if (!topic) {
     return (
@@ -110,40 +85,26 @@ export default function DSATopicDetail() {
               {user ? <SyncStatus /> : null}
             </div>
           </div>
-          <BookmarkButton slug={topic.slug} />
+          <TopicMenu slug={topic.slug} />
         </div>
 
         {/* Actions bar */}
         <div className="flex flex-wrap items-center gap-3">
           <ModeToggle />
-          <ProgressBadge slug={topic.slug} />
-          {user &&
-            (notesEditing ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => topicDocRef.current?.save?.()}
-                  className={`${actionVisibility} rounded-lg border border-primary-300 bg-primary-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-700 dark:border-primary-600 dark:bg-primary-500 dark:hover:bg-primary-600`}
-                >
-                  Save notes
-                </button>
-                <button
-                  type="button"
-                  onClick={() => topicDocRef.current?.cancel?.()}
-                  className={`${actionVisibility} rounded-lg border border-surface-200 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-200 dark:hover:bg-surface-800`}
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void handleEditNotes()}
-                className={`${actionVisibility} rounded-lg border border-surface-200 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition-colors hover:border-primary-300 hover:bg-primary-50/60 hover:text-primary-700 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-200 dark:hover:border-primary-700 dark:hover:bg-primary-950/30 dark:hover:text-primary-300`}
-              >
-                Edit notes
-              </button>
-            ))}
+          {user && (
+            <button
+              type="button"
+              onClick={() => setNotesEditing((v) => !v)}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                notesEditing
+                  ? 'border-primary-300 bg-primary-600 text-white hover:bg-primary-700 dark:border-primary-600 dark:bg-primary-500 dark:hover:bg-primary-600'
+                  : 'border-surface-200 bg-white text-surface-700 hover:border-primary-300 hover:bg-primary-50/60 hover:text-primary-700 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-200 dark:hover:border-primary-700 dark:hover:bg-primary-950/30 dark:hover:text-primary-300'
+              }`}
+              title={notesEditing ? 'Switch to view mode' : 'Edit notes (saves automatically)'}
+            >
+              {notesEditing ? 'View' : 'Edit notes'}
+            </button>
+          )}
         </div>
 
         {/* Problem tracking summary */}
@@ -159,12 +120,10 @@ export default function DSATopicDetail() {
 
       <hr className="border-surface-200 dark:border-surface-800" />
 
-      {/* Mode-based notes */}
+      {/* Mode-based notes — editable only in edit mode, autosaves */}
       <TopicContent
-        ref={topicDocRef}
         content={mergedContent}
         topicSlug={topic.slug}
-        noteSource={getNoteSource(topic.slug, mode)}
         notesEditing={notesEditing}
         onNotesEditingChange={setNotesEditing}
       />

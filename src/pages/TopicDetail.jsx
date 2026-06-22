@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, useRef } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { getTopicBySlug } from '../data';
 import { useRecent } from '../context/RecentContext';
@@ -7,11 +7,10 @@ import { useMergedContent } from '../hooks/useMergedContent';
 import { useNotes } from '../context/NotesContext';
 import { useMode } from '../context/ModeContext';
 import { useAuth } from '../context/AuthContext';
-import { useMobileActions } from '../context/MobileActionsContext';
-import ModeToggle from '../components/common/ModeToggle';
-import BookmarkButton from '../components/common/BookmarkButton';
-import ProgressBadge from '../components/common/ProgressBadge';
+import TopicMenu from '../components/common/TopicMenu';
 import TopicContent from '../components/topic/TopicContent';
+import TopicBlock from '../components/topic/TopicBlock';
+import NewTopicInline from '../components/topic/NewTopicInline';
 import TopicMeta from '../components/topic/TopicMeta';
 import RelatedTopics from '../components/topic/RelatedTopics';
 import ExternalLinks from '../components/topic/ExternalLinks';
@@ -23,22 +22,19 @@ export default function TopicDetail() {
   const { slug } = useParams();
   const { getCategoryBySlug } = useAllCategories();
   const staticTopic = getTopicBySlug(slug);
-  const { getNoteTopic, updateModeDocument, ensurePersonalNoteCopy, getNoteSource, deleteTopic } = useNotes();
+  const { getNoteTopic, updateModeDocument, deleteTopic } = useNotes();
   const noteTopic = getNoteTopic(slug);
   const topic = staticTopic || noteTopic;
   const { addRecent } = useRecent();
   const { user, isAdmin } = useAuth();
-  const { showMobileActions } = useMobileActions();
-  // When the user opts in (session-only), these action buttons are revealed on
-  // mobile too; otherwise they stay hidden until the sm breakpoint.
-  const actionVisibility = showMobileActions ? 'inline-flex' : 'hidden sm:inline-flex';
   const navigate = useNavigate();
   const mergedContent = useMergedContent(topic);
   const { mode } = useMode();
   const [showJsonImport, setShowJsonImport] = useState(false);
   const [notesEditing, setNotesEditing] = useState(false);
+  const [showNewTopic, setShowNewTopic] = useState(false);
+  const [createdSlugs, setCreatedSlugs] = useState([]);
   const [deleting, setDeleting] = useState(false);
-  const topicDocRef = useRef(null);
 
   const handleDeleteTopic = useCallback(async () => {
     if (!topic || deleting) return;
@@ -74,20 +70,6 @@ export default function TopicDetail() {
     [topic, mergedContent, updateModeDocument],
   );
 
-  const handleEditNotes = useCallback(async () => {
-    if (!topic) return;
-    try {
-      await ensurePersonalNoteCopy(topic.slug, topic.title, mode, mergedContent);
-    } catch (err) {
-      if (import.meta.env.DEV) {
-        // eslint-disable-next-line no-console
-        console.error('[notes-edit] ensurePersonalNoteCopy failed', err);
-      }
-      return;
-    }
-    setNotesEditing(true);
-  }, [topic, mergedContent, ensurePersonalNoteCopy, mode]);
-
   if (!topic) {
     return (
       <EmptyState
@@ -107,6 +89,23 @@ export default function TopicDetail() {
   }
 
   const category = getCategoryBySlug(topic.category);
+
+  // Topic actions live inside the ⋮ menu — always available to a signed-in user.
+  const menuActions = [];
+  if (user) {
+    menuActions.push({
+      label: 'Import JSON',
+      onClick: () => setShowJsonImport(true),
+      icon: <BracesIcon />,
+    });
+    menuActions.push({
+      label: deleting ? 'Deleting…' : isAdmin ? 'Delete topic' : 'Remove from my notes',
+      onClick: handleDeleteTopic,
+      danger: true,
+      disabled: deleting,
+      icon: <TrashIcon />,
+    });
+  }
 
   return (
     <div className="space-y-8">
@@ -140,7 +139,7 @@ export default function TopicDetail() {
           </h1>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
             {user ? <SyncStatus /> : null}
-            <BookmarkButton slug={topic.slug} />
+            <TopicMenu slug={topic.slug} actions={menuActions} />
           </div>
         </div>
 
@@ -148,54 +147,19 @@ export default function TopicDetail() {
 
         {/* Actions bar */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* <ModeToggle /> */}
-          <ProgressBadge slug={topic.slug} />
           {user && (
             <>
-              {notesEditing ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => topicDocRef.current?.save?.()}
-                    className={`${actionVisibility} rounded-lg border border-primary-300 bg-primary-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-700 dark:border-primary-600 dark:bg-primary-500 dark:hover:bg-primary-600`}
-                  >
-                    Save notes
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => topicDocRef.current?.cancel?.()}
-                    className={`${actionVisibility} rounded-lg border border-surface-200 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition-colors hover:bg-surface-50 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-200 dark:hover:bg-surface-800`}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
               <button
                 type="button"
-                onClick={() => void handleEditNotes()}
-                className={`${actionVisibility} rounded-lg border border-surface-200 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition-colors hover:border-primary-300 hover:bg-primary-50/60 hover:text-primary-700 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-200 dark:hover:border-primary-700 dark:hover:bg-primary-950/30 dark:hover:text-primary-300`}
+                onClick={() => setNotesEditing((v) => !v)}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  notesEditing
+                    ? 'border-primary-300 bg-primary-600 text-white hover:bg-primary-700 dark:border-primary-600 dark:bg-primary-500 dark:hover:bg-primary-600'
+                    : 'border-surface-200 bg-white text-surface-700 hover:border-primary-300 hover:bg-primary-50/60 hover:text-primary-700 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-200 dark:hover:border-primary-700 dark:hover:bg-primary-950/30 dark:hover:text-primary-300'
+                }`}
+                title={notesEditing ? 'Switch to view mode' : 'Edit notes (saves automatically)'}
               >
-                Edit notes
-              </button>
-              )}
-              {(
-                <button
-                  type="button"
-                  onClick={() => setShowJsonImport(true)}
-                  className={`${actionVisibility} items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/30`}
-                >
-                  <BracesIcon />
-                  Import JSON
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={handleDeleteTopic}
-                disabled={deleting}
-                className={`${actionVisibility} items-center gap-1.5 rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/30`}
-              >
-                <TrashIcon />
-                {deleting ? 'Deleting…' : isAdmin ? 'Delete topic' : 'Remove from my notes'}
+                {notesEditing ? 'View' : 'Edit notes'}
               </button>
             </>
           )}
@@ -213,17 +177,34 @@ export default function TopicDetail() {
         </div>
       </div>
 
-      {/* Section-based content (includes editing) */}
+      {/* Section-based content — editable only in edit mode, autosaves */}
       <TopicContent
-        ref={topicDocRef}
         content={mergedContent}
         topicSlug={topic.slug}
-        noteSource={getNoteSource(topic.slug, mode)}
         notesEditing={notesEditing}
         onNotesEditingChange={setNotesEditing}
+        onAddTopic={() => setShowNewTopic(true)}
       />
 
-      {isAdmin && showJsonImport ? (
+      {/* Inline "new topic" form, opened from the `/add topic` slash command */}
+      {showNewTopic ? (
+        <NewTopicInline
+          category={topic.category}
+          afterSlug={topic.slug}
+          onCreated={(slug) =>
+            setCreatedSlugs((prev) => (prev.includes(slug) ? prev : [...prev, slug]))
+          }
+          onClose={() => setShowNewTopic(false)}
+        />
+      ) : null}
+
+      {/* Topics just created from here — shown inline so they can be edited/deleted in place */}
+      {createdSlugs.map((slug) => {
+        const created = getNoteTopic(slug);
+        return created ? <TopicBlock key={slug} topic={created} editing={notesEditing} /> : null;
+      })}
+
+      {showJsonImport ? (
         <AdminJsonImport
           currentMode={mode}
           onAppend={handleJsonImport}
