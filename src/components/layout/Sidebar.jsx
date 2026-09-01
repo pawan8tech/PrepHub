@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { categories as systemCategories } from '../../data/categories';
+import { useAllCategories } from '../../hooks/useAllCategories';
 import { useCustomCategories } from '../../context/CustomCategoriesContext';
 import { useAllContent } from '../../hooks/useAllContent';
 import { useAuth } from '../../context/AuthContext';
@@ -26,7 +26,8 @@ const statusDot = {
 };
 
 export default function Sidebar({ open, onClose }) {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
+  const { allCategories } = useAllCategories();
   const { customCategories } = useCustomCategories();
   const { getTopicsByCategory } = useAllContent();
   const { getTopicStatus } = useProgress();
@@ -34,8 +35,14 @@ export default function Sidebar({ open, onClose }) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const systemCats = systemCategories.filter((c) => c.slug !== 'dsa');
-  const hasCustom = user && customCategories.length > 0;
+  // Use the same source as the Categories page so every category shows here too —
+  // fixed, shared/global, and ones synthesized from their topics (e.g. migrated
+  // "<Subject> Interview" categories). Only the user's PRIVATE categories go under
+  // "My Categories"; everything else sits in the main "Categories" list.
+  const ownSlugs = new Set(customCategories.filter((c) => !c.global).map((c) => c.slug));
+  const ownCats = allCategories.filter((c) => ownSlugs.has(c.slug));
+  const mainCats = allCategories.filter((c) => c.slug !== 'dsa' && !ownSlugs.has(c.slug));
+  const hasCustom = user && ownCats.length > 0;
 
   // Detect if we're on a category page
   const categoryMatch = location.pathname.match(/^\/category\/([^/]+)/);
@@ -169,13 +176,29 @@ export default function Sidebar({ open, onClose }) {
                 {item.label}
               </NavLink>
             ))}
+            {isAdmin && (
+              <NavLink
+                to="/email"
+                onClick={onClose}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                    isActive
+                      ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
+                      : 'text-surface-600 hover:bg-surface-50 hover:text-surface-900 dark:text-surface-400 dark:hover:bg-surface-800/50 dark:hover:text-surface-200'
+                  }`
+                }
+              >
+                <MailIcon className="h-4 w-4 shrink-0" />
+                Email
+              </NavLink>
+            )}
           </div>
 
           {/* System categories */}
           <div className="mt-6">
             <SectionLabel>Categories</SectionLabel>
             <div className="space-y-0.5">
-              {systemCats.map((cat) => (
+              {mainCats.map((cat) => (
                 <CategoryItem
                   key={cat.slug}
                   cat={cat}
@@ -202,7 +225,7 @@ export default function Sidebar({ open, onClose }) {
             <div className="mt-5">
               <SectionLabel>My Categories</SectionLabel>
               <div className="space-y-0.5">
-                {customCategories.map((cat) => (
+                {ownCats.map((cat) => (
                   <CategoryItem
                     key={cat.slug}
                     cat={cat}
@@ -509,6 +532,14 @@ function ChartIcon({ className }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+    </svg>
+  );
+}
+
+function MailIcon({ className }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
     </svg>
   );
 }

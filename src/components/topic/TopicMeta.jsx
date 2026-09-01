@@ -1,3 +1,4 @@
+
 import { getCategoryBySlug } from '../../data';
 
 export default function TopicMeta({ topic }) {

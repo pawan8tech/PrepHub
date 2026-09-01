@@ -11,6 +11,7 @@ export const BLOCK_CONVERT_COMMANDS = [
   { label: 'Warning', value: 'warning' },
   { label: 'Tip', value: 'tip' },
   { label: 'Table', value: 'table' },
+  { label: 'Image', value: 'image' },
   { label: 'Q & A', value: 'qna' },
 ];
 

@@ -8,6 +8,7 @@ import {
   forwardRef,
   useImperativeHandle,
   createElement,
+  Fragment,
 } from 'react';
 import {
   ensureDocumentShape,
@@ -18,8 +19,17 @@ import {
 } from '../../utils/documentContent';
 import { useNotes } from '../../context/NotesContext';
 import { createBlock, updateBlock, insertBlockAfter, deleteBlock } from '../../utils/editorBlockModel';
+import { moveItem } from '../../utils/topicOrderArch';
 import { storageRootToDraftBlocks, isDraftPassthrough } from '../../utils/editorBlockStorageBridge';
 import { getCaretCoordinates } from '../../utils/getCaretCoordinates';
+import { parsePastedBlocks, parseHtmlToBlocks } from '../../utils/parsePaste';
+import {
+  uploadFileToCloudinary,
+  uploadRemoteImageToCloudinary,
+  isCloudinaryUrl,
+  cloudinaryConfigured,
+} from '../../utils/cloudinary';
+import ImageBlockEditor from './ImageBlockEditor';
 import {
   getSlashMenuState,
   filterBlockConvertCommands,
@@ -427,6 +437,8 @@ function createBlockFromCommand(command) {
       return createBlock('callout', { variant: 'tip' });
     case 'table':
       return createBlock('table');
+    case 'image':
+      return createBlock('image');
     case 'qna':
       return createBlock('qna');
     default:
@@ -493,6 +505,9 @@ function applyBlockConvert(blocks, blockId, command, seed) {
     case 'table':
       next = createBlock('table', { id });
       break;
+    case 'image':
+      next = createBlock('image', { id, caption: seed });
+      break;
     case 'qna':
       next = createBlock('qna', { id, question: seed });
       break;
@@ -502,11 +517,186 @@ function applyBlockConvert(blocks, blockId, command, seed) {
   return blocks.map((x) => (x.id === id ? next : x));
 }
 
+/** First image file on the clipboard (screenshot / copied image), or null. */
+function findClipboardImage(cd) {
+  if (cd.files && cd.files.length) {
+    for (const f of cd.files) if (f && f.type && f.type.startsWith('image/')) return f;
+  }
+  if (cd.items && cd.items.length) {
+    for (const it of cd.items) {
+      if (it.kind === 'file' && it.type && it.type.startsWith('image/')) {
+        const f = it.getAsFile();
+        if (f) return f;
+      }
+    }
+  }
+  return null;
+}
+
+function RowMenuItem({ children, onClick, disabled, danger }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={onClick}
+      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors disabled:opacity-40 ${
+        danger
+          ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20'
+          : 'text-surface-600 hover:bg-surface-50 dark:text-surface-400 dark:hover:bg-surface-700'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * Wraps a top-level block with a hover handle in the left gutter (no layout shift).
+ * The handle drags to reorder; clicking it opens a menu (add above/below, duplicate,
+ * delete). The row only becomes draggable while the handle is pressed, so text
+ * selection/editing inside the block is unaffected.
+ */
+function EditableBlockRow({
+  children,
+  index,
+  isDragging,
+  isOver,
+  onAddAbove,
+  onAddBelow,
+  onDuplicate,
+  onDelete,
+  canDelete,
+  onDragStartRow,
+  onDragOverRow,
+  onDropRow,
+  onDragEndRow,
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const rowRef = useRef(null);
+
+  const setDraggable = (v) => {
+    if (rowRef.current) rowRef.current.draggable = v;
+  };
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  return (
+    <div
+      ref={rowRef}
+      className={`group/row relative transition-opacity ${isDragging ? 'opacity-40' : ''}`}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(index));
+        onDragStartRow(index);
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        onDragOverRow(index);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDropRow(index);
+      }}
+      onDragEnd={() => {
+        setDraggable(false);
+        onDragEndRow();
+      }}
+    >
+      {isOver ? (
+        <div className="pointer-events-none absolute -top-2 left-0 right-0 z-40 h-0.5 rounded bg-primary-400" />
+      ) : null}
+      <div ref={ref} className="absolute -left-6 top-0 z-30 hidden sm:block">
+        <button
+          type="button"
+          onMouseDown={() => setDraggable(true)}
+          onMouseUp={() => setDraggable(false)}
+          onClick={() => setOpen((v) => !v)}
+          aria-label="Drag to move, or click for section actions"
+          aria-haspopup="menu"
+          title="Drag to move · click for actions"
+          className={`flex h-6 w-5 cursor-grab items-center justify-center rounded text-surface-300 transition-opacity hover:bg-surface-100 hover:text-surface-600 active:cursor-grabbing dark:text-surface-600 dark:hover:bg-surface-800 dark:hover:text-surface-300 ${
+            open ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100'
+          }`}
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" />
+            <circle cx="9" cy="12" r="1.4" /><circle cx="15" cy="12" r="1.4" />
+            <circle cx="9" cy="18" r="1.4" /><circle cx="15" cy="18" r="1.4" />
+          </svg>
+        </button>
+        {open && (
+          <div
+            role="menu"
+            className="absolute left-0 top-7 z-40 w-44 rounded-lg border border-surface-200 bg-white py-1 shadow-lg dark:border-surface-700 dark:bg-surface-800"
+          >
+            <RowMenuItem onClick={() => { setOpen(false); onAddAbove(); }}>
+              <PlusMini /> Add section above
+            </RowMenuItem>
+            <RowMenuItem onClick={() => { setOpen(false); onAddBelow(); }}>
+              <PlusMini /> Add section below
+            </RowMenuItem>
+            <RowMenuItem onClick={() => { setOpen(false); onDuplicate(); }}>
+              <DuplicateMini /> Duplicate
+            </RowMenuItem>
+            <div className="my-1 border-t border-surface-100 dark:border-surface-700" />
+            <RowMenuItem danger disabled={!canDelete} onClick={() => { setOpen(false); onDelete(); }}>
+              <TrashMini /> Delete section
+            </RowMenuItem>
+          </div>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function PlusMini() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+    </svg>
+  );
+}
+function DuplicateMini() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 8V6a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2h-2M6 8h8a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2v-8a2 2 0 012-2z" />
+    </svg>
+  );
+}
+function TrashMini() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
+    </svg>
+  );
+}
+
 export function BlockListEditor({ blocks, onChange, depth, allowQna = true, onAddTopic }) {
   const allowAddTopic = typeof onAddTopic === 'function';
   const taRefs = useRef({});
   const wrapRefs = useRef({});
   const [focusTarget, setFocusTarget] = useState(null);
+  // Drag-to-reorder state for top-level sections.
+  const [dragIndex, setDragIndex] = useState(null);
+  const [overIndex, setOverIndex] = useState(null);
+  const moveBlock = useCallback(
+    (from, to) => {
+      if (from == null || to == null || from === to) return;
+      onChange(moveItem(blocks, from, to));
+    },
+    [blocks, onChange],
+  );
   const [slash, setSlash] = useState(null);
   /** Menu highlight index only — not stored on `slash` so syncSlashFromField never resets it. */
   const [slashActiveIndex, setSlashActiveIndex] = useState(0);
@@ -611,6 +801,91 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true, onAd
         focusId = `${target.id}:${focusBackward ? items.length - 1 : 0}`;
       }
       setFocusTarget({ id: focusId, caret: focusBackward ? 'end' : 'start' });
+    },
+    [blocks, onChange],
+  );
+
+  // Smart paste: turn structured clipboard content into real blocks. Prefers the
+  // rich text/html payload (Notion, docs, web pages); falls back to markdown/plain
+  // text. Plain single-paragraph text falls through to the native paste.
+  const handleSmartPaste = useCallback(
+    (e, block) => {
+      const cd = e.clipboardData;
+      if (!cd) return;
+
+      // Capture the field/caret synchronously (the event is pooled; we may await below).
+      const ta = e.currentTarget;
+      const value = ta.value ?? '';
+      const selStart = typeof ta.selectionStart === 'number' ? ta.selectionStart : value.length;
+      const selEnd = typeof ta.selectionEnd === 'number' ? ta.selectionEnd : selStart;
+      const before = value.slice(0, selStart);
+      const after = value.slice(selEnd);
+
+      const insertSeq = (parsedBlocks) => {
+        const seq = [];
+        if (before.trim()) seq.push(createBlock('text', { content: before }));
+        seq.push(...parsedBlocks);
+        if (after.trim()) seq.push(createBlock('text', { content: after }));
+        if (seq.length === 0) return;
+        const idx = blocks.findIndex((b) => b?.id === block.id);
+        if (idx === -1) return;
+        onChange([...blocks.slice(0, idx), ...seq, ...blocks.slice(idx + 1)]);
+        const last = seq[seq.length - 1];
+        const focusId =
+          last.type === 'list'
+            ? `${last.id}:${Math.max(0, (last.items?.length ?? 1) - 1)}`
+            : last.id;
+        setFocusTarget({ id: focusId, caret: 'end' });
+      };
+
+      // 1) A pasted image FILE (screenshot / copied image) → upload to Cloudinary.
+      const imageFile = findClipboardImage(cd);
+      if (imageFile && cloudinaryConfigured()) {
+        e.preventDefault();
+        (async () => {
+          try {
+            const secureUrl = await uploadFileToCloudinary(imageFile);
+            insertSeq([createBlock('image', { url: secureUrl })]);
+          } catch (err) {
+            if (import.meta.env.DEV) console.error('[paste] image upload failed', err);
+          }
+        })();
+        return;
+      }
+
+      // 2) Structured text — prefer whichever payload (html vs markdown) has more structure.
+      const html = cd.getData('text/html');
+      const plain = cd.getData('text/plain');
+      const htmlBlocks = html && html.trim() ? parseHtmlToBlocks(html) || [] : [];
+      const plainBlocks = plain && plain.trim() ? parsePastedBlocks(plain) : [];
+      if (htmlBlocks.length === 0 && plainBlocks.length === 0) return;
+      const parsed = plainBlocks.length > htmlBlocks.length ? plainBlocks : htmlBlocks;
+      if (parsed.length === 0 || (parsed.length === 1 && parsed[0].type === 'text')) return;
+
+      e.preventDefault();
+
+      // Re-host external image URLs (e.g. Notion/S3, which expire) to Cloudinary so
+      // they persist; insert once re-hosting settles. Failures keep the original URL.
+      const externalImages = parsed.filter(
+        (b) => b.type === 'image' && /^https?:/i.test(b.url || '') && !isCloudinaryUrl(b.url),
+      );
+      if (externalImages.length && cloudinaryConfigured()) {
+        (async () => {
+          await Promise.all(
+            externalImages.map(async (b) => {
+              try {
+                const u = await uploadRemoteImageToCloudinary(b.url);
+                if (u) b.url = u;
+              } catch (err) {
+                if (import.meta.env.DEV) console.warn('[paste] image re-host failed', err);
+              }
+            }),
+          );
+          insertSeq(parsed);
+        })();
+      } else {
+        insertSeq(parsed);
+      }
     },
     [blocks, onChange],
   );
@@ -953,9 +1228,7 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true, onAd
 
   if (!blocks.length) return null;
 
-  return (
-    <div className="max-w-3xl space-y-4">
-      {blocks.map((block, blockIndex) => {
+  const renderBlockContent = (block, blockIndex) => {
         if (isDraftPassthrough(block)) {
           return (
             <div key={block.id}>
@@ -1046,6 +1319,7 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true, onAd
                     if (ni) setFocusTarget({ id: ni, caret: 'start' });
                   }
                 }}
+                onPaste={(e) => handleSmartPaste(e, block)}
                 rows={Math.max(2, String(block.content ?? '').split('\n').length)}
                 className={`block min-h-[2.5rem] resize-y whitespace-pre-line text-[15px] leading-[1.75] text-surface-700 dark:text-surface-300 ${inputGhost}`}
                 data-focus-key={block.id}
@@ -1292,6 +1566,18 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true, onAd
           );
         }
 
+        if (block.type === 'image') {
+          return (
+            <ImageBlockEditor
+              key={block.id}
+              url={typeof block.url === 'string' ? block.url : ''}
+              caption={typeof block.caption === 'string' ? block.caption : ''}
+              onChange={(patch) => onChange(updateBlock(blocks, block.id, patch))}
+              onRemove={() => removeBlock(block.id)}
+            />
+          );
+        }
+
         if (block.type === 'table') {
           const headers = Array.isArray(block.headers) ? block.headers : [];
           const rows = Array.isArray(block.rows) ? block.rows : [];
@@ -1366,7 +1652,7 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true, onAd
                         </div>
                       </th>
                     ))}
-                    <th className="w-10 border border-dashed border-surface-200 dark:border-surface-700">
+                    <th className="hidden w-10 border border-dashed border-surface-200 group-hover/block:table-cell dark:border-surface-700">
                       <button
                         type="button"
                         onClick={addColumn}
@@ -1409,7 +1695,7 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true, onAd
                           />
                         </td>
                       ))}
-                      <td className="w-10 border border-dashed border-surface-200 dark:border-surface-700">
+                      <td className="hidden w-10 border border-dashed border-surface-200 group-hover/block:table-cell dark:border-surface-700">
                         <button
                           type="button"
                           onClick={() => deleteRow(ri)}
@@ -1422,7 +1708,7 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true, onAd
                       </td>
                     </tr>
                   ))}
-                  <tr>
+                  <tr className="hidden group-hover/block:table-row">
                     <td
                       colSpan={Math.max(1, colCount) + 1}
                       className="border border-dashed border-surface-200 p-0 dark:border-surface-700"
@@ -1450,7 +1736,7 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true, onAd
                 }}
                 aria-label="Add block below table"
                 title="Add a new block below the table"
-                className="mt-1 flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-surface-200 px-2 py-1.5 text-xs text-surface-500 transition-colors hover:bg-surface-50 hover:text-surface-800 dark:border-surface-700 dark:hover:bg-surface-800 dark:hover:text-surface-100"
+                className="mt-1 hidden w-full items-center justify-center gap-1 rounded-md border border-dashed border-surface-200 px-2 py-1.5 text-xs text-surface-500 transition-colors group-hover/block:flex hover:bg-surface-50 hover:text-surface-800 dark:border-surface-700 dark:hover:bg-surface-800 dark:hover:text-surface-100"
               >
                 + Add block below
               </button>
@@ -1535,7 +1821,54 @@ export function BlockListEditor({ blocks, onChange, depth, allowQna = true, onAd
             {String(block)}
           </p>
         );
-      })}
+  };
+
+  return (
+    <div className="max-w-3xl space-y-4">
+      {blocks.map((block, blockIndex) =>
+        depth === 0 && !isDraftPassthrough(block) ? (
+          <EditableBlockRow
+            key={block.id ?? `b-${blockIndex}`}
+            index={blockIndex}
+            isDragging={dragIndex === blockIndex}
+            isOver={overIndex === blockIndex && dragIndex !== null && dragIndex !== blockIndex}
+            onDragStartRow={setDragIndex}
+            onDragOverRow={setOverIndex}
+            onDropRow={(to) => {
+              moveBlock(dragIndex, to);
+              setDragIndex(null);
+              setOverIndex(null);
+            }}
+            onDragEndRow={() => {
+              setDragIndex(null);
+              setOverIndex(null);
+            }}
+            canDelete={blocks.filter((b) => b && !isDraftPassthrough(b)).length > 1}
+            onAddAbove={() => {
+              const nb = createBlock('text');
+              onChange([...blocks.slice(0, blockIndex), nb, ...blocks.slice(blockIndex)]);
+              setFocusTarget({ id: nb.id, caret: 'start' });
+            }}
+            onAddBelow={() => {
+              const nb = createBlock('text');
+              onChange(insertBlockAfter(blocks, blockIndex, nb));
+              setFocusTarget({ id: nb.id, caret: 'start' });
+            }}
+            onDuplicate={() => {
+              const dup = createBlock(block.type, { ...block, id: undefined });
+              onChange(insertBlockAfter(blocks, blockIndex, dup));
+              setFocusTarget({ id: dup.type === 'list' ? `${dup.id}:0` : dup.id, caret: 'start' });
+            }}
+            onDelete={() => removeBlock(block.id)}
+          >
+            {renderBlockContent(block, blockIndex)}
+          </EditableBlockRow>
+        ) : (
+          <Fragment key={block.id ?? `b-${blockIndex}`}>
+            {renderBlockContent(block, blockIndex)}
+          </Fragment>
+        ),
+      )}
     </div>
   );
 }
