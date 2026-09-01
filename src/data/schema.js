@@ -1,3 +1,4 @@
+
 /**
  * Factory for regular topic entries (React, JS, CSS, etc.).
  * Pass only the fields you have — everything else gets safe defaults.

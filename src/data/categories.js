@@ -48,14 +48,6 @@ export const categories = [
     color: '#CC6699',
   },
   {
-    id: 'java',
-    title: 'Java',
-    slug: 'java',
-    icon: '☕',
-    description: 'OOP, collections, multithreading, and core concepts',
-    color: '#ED8B00',
-  },
-  {
     id: 'dsa',
     title: 'DSA',
     slug: 'dsa',

@@ -1,3 +1,4 @@
+
 import { createBrowserRouter } from 'react-router-dom';
 import Layout from '../components/layout/Layout';
 import Dashboard from '../pages/Dashboard';
@@ -10,6 +11,7 @@ import Bookmarks from '../pages/Bookmarks';
 import RecentlyViewed from '../pages/RecentlyViewed';
 import Progress from '../pages/Progress';
 import Settings from '../pages/Settings';
+import EmailComposer from '../pages/EmailComposer';
 import NotFound from '../pages/NotFound';
 
 export const router = createBrowserRouter([
@@ -26,6 +28,7 @@ export const router = createBrowserRouter([
       { path: 'recent', element: <RecentlyViewed /> },
       { path: 'progress', element: <Progress /> },
       { path: 'settings', element: <Settings /> },
+      { path: 'email', element: <EmailComposer /> },
       { path: '*', element: <NotFound /> },
     ],
   },
