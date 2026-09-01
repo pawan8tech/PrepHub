@@ -146,5 +146,6 @@ function draftItemToStorage(b) {
 }
 
 export function isDraftPassthrough(b) {
-  return b && typeof b === 'object' && (b.type === 'image' || b.type === 'group');
+  // `image` is now editable inline (URL + caption); only `group` stays read-only.
+  return b && typeof b === 'object' && b.type === 'group';
 }

@@ -126,6 +126,13 @@ export function createBlock(type, partial = {}) {
     }
     case 'table':
       return { id, type: 'table', ...normalizeTableShape(partial) };
+    case 'image':
+      return {
+        id,
+        type: 'image',
+        url: typeof partial.url === 'string' ? partial.url : '',
+        caption: typeof partial.caption === 'string' ? partial.caption : '',
+      };
     case 'qna': {
       const incoming = Array.isArray(partial.answer) ? partial.answer : null;
       const answer =
