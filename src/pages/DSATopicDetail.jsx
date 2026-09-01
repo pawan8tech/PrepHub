@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getDSATopicBySlug } from '../data';
 import { useRecent } from '../context/RecentContext';
 import { useAuth } from '../context/AuthContext';
+import { useIdleExitEdit } from '../hooks/useIdleExitEdit';
 import { useDSAProblems } from '../context/DSAProblemContext';
 import { useMergedContent } from '../hooks/useMergedContent';
 import ModeToggle from '../components/common/ModeToggle';
@@ -29,6 +30,10 @@ export default function DSATopicDetail() {
   const mergedContent = useMergedContent(topic);
   const [notesEditing, setNotesEditing] = useState(false);
 
+  // Double-click enters edit; 30s of inactivity drops back to view.
+  const exitEdit = useCallback(() => setNotesEditing(false), []);
+  useIdleExitEdit(notesEditing, exitEdit);
+
   useEffect(() => {
     if (topic) addRecent(topic.slug);
   }, [topic, addRecent]);
@@ -50,6 +55,16 @@ export default function DSATopicDetail() {
       />
     );
   }
+
+  const menuActions = user
+    ? [
+        {
+          label: notesEditing ? 'View mode' : 'Edit notes',
+          onClick: () => setNotesEditing((v) => !v),
+          icon: notesEditing ? <EyeIcon /> : <PencilIcon />,
+        },
+      ]
+    : [];
 
   return (
     <div className="space-y-6">
@@ -85,26 +100,12 @@ export default function DSATopicDetail() {
               {user ? <SyncStatus /> : null}
             </div>
           </div>
-          <TopicMenu slug={topic.slug} />
+          <TopicMenu slug={topic.slug} actions={menuActions} />
         </div>
 
         {/* Actions bar */}
         <div className="flex flex-wrap items-center gap-3">
           <ModeToggle />
-          {user && (
-            <button
-              type="button"
-              onClick={() => setNotesEditing((v) => !v)}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                notesEditing
-                  ? 'border-primary-300 bg-primary-600 text-white hover:bg-primary-700 dark:border-primary-600 dark:bg-primary-500 dark:hover:bg-primary-600'
-                  : 'border-surface-200 bg-white text-surface-700 hover:border-primary-300 hover:bg-primary-50/60 hover:text-primary-700 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-200 dark:hover:border-primary-700 dark:hover:bg-primary-950/30 dark:hover:text-primary-300'
-              }`}
-              title={notesEditing ? 'Switch to view mode' : 'Edit notes (saves automatically)'}
-            >
-              {notesEditing ? 'View' : 'Edit notes'}
-            </button>
-          )}
         </div>
 
         {/* Problem tracking summary */}
@@ -120,7 +121,7 @@ export default function DSATopicDetail() {
 
       <hr className="border-surface-200 dark:border-surface-800" />
 
-      {/* Mode-based notes — editable only in edit mode, autosaves */}
+      {/* Mode-based notes — autosaves, idle-exits to view */}
       <TopicContent
         content={mergedContent}
         topicSlug={topic.slug}
@@ -191,6 +192,23 @@ function ProblemSummary({ questions, getSolvedCount, getImportantCount, getSolve
         </div>
       )}
     </div>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    </svg>
   );
 }
 

@@ -7,6 +7,8 @@ import { useProgress } from '../context/ProgressContext';
 import { useRecent } from '../context/RecentContext';
 import { useAuth } from '../context/AuthContext';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
+import AdminInterviewMigration from '../components/admin/AdminInterviewMigration';
+import AdminFileLibrary from '../components/admin/AdminFileLibrary';
 
 export default function Settings() {
   const { theme, toggleTheme } = useTheme();
@@ -14,7 +16,7 @@ export default function Settings() {
   const { bookmarks, clearBookmarks } = useBookmarks();
   const { progress, clearProgress } = useProgress();
   const { recent, clearRecent } = useRecent();
-  const { user, logout } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
   const { canInstall, install } = useInstallPrompt();
   const navigate = useNavigate();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -120,6 +122,10 @@ export default function Settings() {
             }
           />
         </SettingsSection>
+
+        {/* Admin tools */}
+        {isAdmin && <AdminFileLibrary />}
+        {isAdmin && <AdminInterviewMigration />}
 
         {/* Account */}
         {user && (

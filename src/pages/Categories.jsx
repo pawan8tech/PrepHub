@@ -11,10 +11,11 @@ export default function Categories() {
   const { getTopicsByCategory } = useAllContent();
   const { addCategory, updateCategory, deleteCategory } = useCustomCategories();
   const { deleteTopic } = useNotes();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
 
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
+  const [makeGlobal, setMakeGlobal] = useState(true); // admin scope: everyone (true) vs admin-only
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -27,7 +28,7 @@ export default function Categories() {
     setSaving(true);
     setError('');
     try {
-      await addCategory(trimmed);
+      await addCategory(trimmed, { global: isAdmin ? makeGlobal : false });
       setName('');
       setAdding(false);
     } catch (err) {
@@ -129,6 +130,35 @@ export default function Categories() {
               Cancel
             </button>
           </div>
+          {isAdmin && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-surface-500 dark:text-surface-400">Visible to:</span>
+              <div className="inline-flex overflow-hidden rounded-md border border-surface-200 dark:border-surface-700">
+                <button
+                  type="button"
+                  onClick={() => setMakeGlobal(true)}
+                  className={`px-2.5 py-1 font-medium transition-colors ${
+                    makeGlobal
+                      ? 'bg-primary-600 text-white dark:bg-primary-500'
+                      : 'bg-white text-surface-600 hover:bg-surface-50 dark:bg-surface-900 dark:text-surface-300 dark:hover:bg-surface-800'
+                  }`}
+                >
+                  Everyone
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMakeGlobal(false)}
+                  className={`px-2.5 py-1 font-medium transition-colors ${
+                    !makeGlobal
+                      ? 'bg-primary-600 text-white dark:bg-primary-500'
+                      : 'bg-white text-surface-600 hover:bg-surface-50 dark:bg-surface-900 dark:text-surface-300 dark:hover:bg-surface-800'
+                  }`}
+                >
+                  Only me
+                </button>
+              </div>
+            </div>
+          )}
           {error ? <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p> : null}
         </div>
       )}
@@ -138,7 +168,7 @@ export default function Categories() {
           <CategoryCard
             key={cat.slug}
             cat={cat}
-            canManage={Boolean(user) && Boolean(cat.isCustom)}
+            canManage={Boolean(user) && Boolean(cat.isCustom) && (!cat.global || isAdmin)}
             onRename={(title) => updateCategory(cat.slug, title)}
             onDelete={() => handleDeleteCategory(cat)}
           />

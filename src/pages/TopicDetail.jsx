@@ -7,6 +7,7 @@ import { useMergedContent } from '../hooks/useMergedContent';
 import { useNotes } from '../context/NotesContext';
 import { useMode } from '../context/ModeContext';
 import { useAuth } from '../context/AuthContext';
+import { useIdleExitEdit } from '../hooks/useIdleExitEdit';
 import TopicMenu from '../components/common/TopicMenu';
 import TopicContent from '../components/topic/TopicContent';
 import TopicBlock from '../components/topic/TopicBlock';
@@ -22,7 +23,7 @@ export default function TopicDetail() {
   const { slug } = useParams();
   const { getCategoryBySlug } = useAllCategories();
   const staticTopic = getTopicBySlug(slug);
-  const { getNoteTopic, updateModeDocument, deleteTopic } = useNotes();
+  const { getNoteTopic, updateModeDocument, deleteTopic, renameTopic } = useNotes();
   const noteTopic = getNoteTopic(slug);
   const topic = staticTopic || noteTopic;
   const { addRecent } = useRecent();
@@ -35,6 +36,10 @@ export default function TopicDetail() {
   const [showNewTopic, setShowNewTopic] = useState(false);
   const [createdSlugs, setCreatedSlugs] = useState([]);
   const [deleting, setDeleting] = useState(false);
+
+  // Double-click enters edit; 30s of inactivity drops back to view.
+  const exitEdit = useCallback(() => setNotesEditing(false), []);
+  useIdleExitEdit(notesEditing, exitEdit);
 
   const handleDeleteTopic = useCallback(async () => {
     if (!topic || deleting) return;
@@ -94,6 +99,20 @@ export default function TopicDetail() {
   const menuActions = [];
   if (user) {
     menuActions.push({
+      label: notesEditing ? 'View mode' : 'Edit notes',
+      onClick: () => setNotesEditing((v) => !v),
+      icon: notesEditing ? <EyeIcon /> : <PencilIcon />,
+    });
+    menuActions.push({
+      label: 'Rename topic',
+      onClick: () => {
+        const next = window.prompt('Rename topic', topic.title);
+        const t = (next || '').trim();
+        if (t && t !== topic.title) renameTopic(topic.slug, t);
+      },
+      icon: <PencilIcon />,
+    });
+    menuActions.push({
       label: 'Import JSON',
       onClick: () => setShowJsonImport(true),
       icon: <BracesIcon />,
@@ -147,22 +166,6 @@ export default function TopicDetail() {
 
         {/* Actions bar */}
         <div className="flex flex-wrap items-center gap-3">
-          {user && (
-            <>
-              <button
-                type="button"
-                onClick={() => setNotesEditing((v) => !v)}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  notesEditing
-                    ? 'border-primary-300 bg-primary-600 text-white hover:bg-primary-700 dark:border-primary-600 dark:bg-primary-500 dark:hover:bg-primary-600'
-                    : 'border-surface-200 bg-white text-surface-700 hover:border-primary-300 hover:bg-primary-50/60 hover:text-primary-700 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-200 dark:hover:border-primary-700 dark:hover:bg-primary-950/30 dark:hover:text-primary-300'
-                }`}
-                title={notesEditing ? 'Switch to view mode' : 'Edit notes (saves automatically)'}
-              >
-                {notesEditing ? 'View' : 'Edit notes'}
-              </button>
-            </>
-          )}
           {category && (
             <Link
               to={`/category/${category.slug}#topic-${topic.slug}`}
@@ -177,7 +180,7 @@ export default function TopicDetail() {
         </div>
       </div>
 
-      {/* Section-based content — editable only in edit mode, autosaves */}
+      {/* Section-based content — autosaves, idle-exits to view */}
       <TopicContent
         content={mergedContent}
         topicSlug={topic.slug}
@@ -225,6 +228,23 @@ function TrashIcon() {
   return (
     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
+    </svg>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
     </svg>
   );
 }

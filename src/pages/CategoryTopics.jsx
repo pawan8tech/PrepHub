@@ -5,6 +5,7 @@ import { useAllContent } from '../hooks/useAllContent';
 import { useNotes } from '../context/NotesContext';
 import { useTopicOrder } from '../context/TopicOrderContext';
 import { useAuth } from '../context/AuthContext';
+import { useIdleExitEdit } from '../hooks/useIdleExitEdit';
 import { downloadCategoryPdf } from '../utils/pdfExport';
 import TopicBlock from '../components/topic/TopicBlock';
 import NewTopicInline from '../components/topic/NewTopicInline';
@@ -30,6 +31,10 @@ export default function CategoryTopics() {
   const [editMode, setEditMode] = useState(false);
   const [showNewTopic, setShowNewTopic] = useState(false);
   const headerRef = useRef(null);
+
+  // Double-click enters edit; 30s of inactivity drops back to view.
+  const exitEdit = useCallback(() => setEditMode(false), []);
+  useIdleExitEdit(editMode, exitEdit);
 
   const handleDownloadPdf = async () => {
     if (pdfLoading || topics.length === 0) return;
